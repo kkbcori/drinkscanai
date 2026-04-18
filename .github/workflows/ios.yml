@@ -43,6 +43,15 @@ jobs:
         run: |
           echo "$CERTIFICATE_BASE64" | tr -d ' \n\r\t' | base64 --decode > distribution.p12
           file distribution.p12
+          ls -lh distribution.p12
+
+      - name: Verify certificate password length
+        env:
+          CERTIFICATE_PASSWORD: ${{ secrets.CERTIFICATE_PASSWORD }}
+        run: |
+          echo "Password length: ${#CERTIFICATE_PASSWORD}"
+          # Test the p12 can be unlocked with this password
+          openssl pkcs12 -in distribution.p12 -passin env:CERTIFICATE_PASSWORD -nokeys -noout 2>&1 && echo "Password OK" || echo "Password WRONG"
 
       - name: Decode provisioning profile
         env:
