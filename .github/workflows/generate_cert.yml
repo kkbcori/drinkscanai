@@ -101,7 +101,7 @@ jobs:
           openssl x509 -in /tmp/dist.cer -inform DER -out /tmp/dist.pem
 
           # Create .p12 combining cert + private key
-          CERT_PASSWORD="Kaykaybee$2412"
+          CERT_PASSWORD="DrinkScanAI2025!"
           openssl pkcs12 -export \
             -out /tmp/distribution.p12 \
             -inkey /tmp/dist_key.pem \
