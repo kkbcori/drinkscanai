@@ -1,3 +1,5 @@
+require 'base64'
+
 default_platform(:ios)
 
 platform :ios do
@@ -11,7 +13,6 @@ platform :ios do
 
     setup_ci
 
-    # API key handles ALL certificate management automatically
     api_key = app_store_connect_api_key(
       key_id:                ENV["APP_STORE_CONNECT_KEY_ID"],
       issuer_id:             ENV["APP_STORE_CONNECT_ISSUER_ID"],
@@ -19,19 +20,23 @@ platform :ios do
       is_key_content_base64: true
     )
 
-    # Install provisioning profile
+    # Write API key .p8 to a temp file so xcodebuild can authenticate
+    key_id      = ENV["APP_STORE_CONNECT_KEY_ID"]
+    issuer_id   = ENV["APP_STORE_CONNECT_ISSUER_ID"]
+    key_content = Base64.decode64(ENV["APP_STORE_CONNECT_KEY_BASE64"])
+    key_path    = "/tmp/AuthKey_#{key_id}.p8"
+    File.write(key_path, key_content)
+
     install_provisioning_profile(
       path: "DrinkScan_Distribution.mobileprovision"
     )
 
-    # Fix bundle ID set by react-native init
     update_app_identifier(
       xcodeproj:      "ios/DrinkScanAI.xcodeproj",
       plist_path:     "DrinkScanAI/Info.plist",
       app_identifier: "com.drinkscanai"
     )
 
-    # Use automatic signing — API key handles certs, no .p12 needed
     update_code_signing_settings(
       use_automatic_signing: true,
       path:                  "ios/DrinkScanAI.xcodeproj",
@@ -56,7 +61,7 @@ platform :ios do
       output_directory: "./build",
       output_name:      "DrinkScanAI.ipa",
       clean:            true,
-      xcargs:           "-allowProvisioningUpdates",
+      xcargs:           "-allowProvisioningUpdates -authenticationKeyPath \"#{key_path}\" -authenticationKeyID #{key_id} -authenticationKeyIssuerID #{issuer_id}",
       export_options: {
         provisioningProfiles: {
           "com.drinkscanai" => "DrinkScan Distribution"
