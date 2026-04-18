@@ -1,0 +1,99 @@
+default_platform(:ios)
+
+platform :ios do
+
+  before_all do
+    ensure_bundle_exec
+  end
+
+  desc "Build and upload to TestFlight"
+  lane :beta do
+
+    # 1. Temporary keychain for CI
+    setup_ci
+
+    # 2. App Store Connect API key — same secret names as PassportSnap
+    api_key = app_store_connect_api_key(
+      key_id:                ENV["APP_STORE_CONNECT_KEY_ID"],
+      issuer_id:             ENV["APP_STORE_CONNECT_ISSUER_ID"],
+      key_content:           ENV["APP_STORE_CONNECT_KEY_BASE64"],
+      is_key_content_base64: true
+    )
+
+    # 3. Import distribution certificate into CI keychain
+    import_certificate(
+      certificate_path:     "distribution.p12",
+      certificate_password: ENV["CERTIFICATE_PASSWORD"],
+      keychain_name:        "fastlane_tmp_keychain",
+      keychain_password:    "fastlane_tmp_keychain_password"
+    )
+
+    # 4. Install the provisioning profile
+    install_provisioning_profile(
+      path: "DrinkScan_Distribution.mobileprovision"
+    )
+
+    # 5. Update Xcode project to use manual signing
+    update_code_signing_settings(
+      use_automatic_signing: false,
+      path:                  "ios/DrinkScan.xcodeproj",
+      code_sign_identity:    "iPhone Distribution",
+      profile_name:          "DrinkScan Distribution"
+    )
+
+    # 6. Bump build number to current timestamp (keeps TestFlight happy)
+    increment_build_number(
+      build_number: Time.now.strftime("%Y%m%d%H%M"),
+      xcodeproj:    "ios/DrinkScan.xcodeproj"
+    )
+
+    # 7. Install CocoaPods dependencies
+    cocoapods(
+      clean_install: true,
+      podfile:       "ios/Podfile"
+    )
+
+    # 8. Build the .ipa
+    build_app(
+      workspace:     "ios/DrinkScan.xcworkspace",
+      scheme:        "DrinkScan",
+      configuration: "Release",
+      export_method: "app-store",
+      output_directory: "./build",
+      output_name:   "DrinkScan.ipa",
+      clean:         true
+    )
+
+    # 9. Upload to TestFlight — no manual changelog needed for beta
+    upload_to_testflight(
+      api_key:          api_key,
+      skip_waiting_for_build_processing: true,
+      changelog:        "Automated build from GitHub Actions"
+    )
+
+    UI.success "Successfully uploaded to TestFlight!"
+  end
+
+  # ── build-only lane (for local Mac testing) ────────────────────────────────
+  desc "Build only — no upload (requires local Mac with Xcode)"
+  lane :build do
+    cocoapods(
+      clean_install: true,
+      podfile:       "ios/Podfile"
+    )
+    build_app(
+      workspace:     "ios/DrinkScan.xcworkspace",
+      scheme:        "DrinkScan",
+      configuration: "Release",
+      export_method: "app-store",
+      output_directory: "./build"
+    )
+    UI.success "Build complete — IPA saved to ./build/DrinkScan.ipa"
+  end
+
+  # ── Error handler ──────────────────────────────────────────────────────────
+  error do |lane, exception|
+    UI.error "Lane #{lane} failed: #{exception.message}"
+  end
+
+end

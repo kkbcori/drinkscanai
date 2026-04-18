@@ -1,0 +1,67 @@
+name: iOS — Build & TestFlight
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build-and-deploy:
+    name: Build iOS & Upload to TestFlight
+    runs-on: macos-14
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install JS dependencies
+        run: npm install --legacy-peer-deps
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.2"
+          bundler-cache: true
+
+      - name: Cache CocoaPods
+        uses: actions/cache@v4
+        with:
+          path: ios/Pods
+          key: pods-${{ hashFiles('ios/Podfile.lock') }}
+          restore-keys: pods-
+
+      - name: Decode distribution certificate
+        run: |
+          echo "${{ secrets.CERTIFICATE_BASE64 }}" \
+            | base64 --decode > distribution.p12
+
+      - name: Decode provisioning profile
+        run: |
+          echo "${{ secrets.PROVISIONING_PROFILE_BASE64 }}" \
+            | base64 --decode > DrinkScan_Distribution.mobileprovision
+
+      - name: Build and upload to TestFlight
+        env:
+          APP_STORE_CONNECT_KEY_ID:     ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID:  ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_KEY_BASE64 }}
+          CERTIFICATE_PASSWORD:         ${{ secrets.CERTIFICATE_PASSWORD }}
+          FASTLANE_XCODEBUILD_SETTINGS_TIMEOUT: "120"
+        run: bundle exec fastlane beta
+
+      - name: Upload build logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: |
+            ~/Library/Logs/gym/
+            ./build/*.log
+          retention-days: 5

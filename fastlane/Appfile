@@ -1,0 +1,16 @@
+# Appfile — app identifiers used by all Fastlane lanes
+#
+# Replace the values below with your actual App Store Connect details.
+# These are NOT secrets — safe to commit.
+
+# Your app's bundle identifier (must match Xcode project)
+app_identifier "com.drinkscanai"
+
+# Your Apple ID (used for some lanes — API key auth is preferred for CI)
+apple_id "your.apple.id@example.com"
+
+# Your Team ID — find it at developer.apple.com → Membership
+team_id "XXXXXXXXXX"
+
+# App Store Connect Team ID (usually same as team_id for individuals)
+itc_team_id "XXXXXXXXXX"
