@@ -56,6 +56,7 @@ platform :ios do
       output_directory: "./build",
       output_name:      "DrinkScanAI.ipa",
       clean:            true,
+      xcargs:           "-allowProvisioningUpdates",
       export_options: {
         provisioningProfiles: {
           "com.drinkscanai" => "DrinkScan Distribution"
