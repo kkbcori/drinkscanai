@@ -54,8 +54,7 @@ platform :ios do
     )
 
     cocoapods(
-      clean_install: true,
-      podfile:       "ios/Podfile"
+      podfile: "ios/Podfile"
     )
 
     build_app(
@@ -65,7 +64,6 @@ platform :ios do
       export_method:    "app-store",
       output_directory: "./build",
       output_name:      "DrinkScanAI.ipa",
-      clean:            true,
       export_options: {
         provisioningProfiles: {
           "com.drinkscanai" => "DrinkScan Distribution"
