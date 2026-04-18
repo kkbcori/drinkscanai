@@ -1,0 +1,131 @@
+name: Generate Distribution Certificate (run once)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  generate:
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.2"
+          bundler-cache: true
+
+      - name: Generate certificate and output base64
+        env:
+          APP_STORE_CONNECT_KEY_ID:     ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID:  ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_KEY_BASE64 }}
+        run: |
+          # Decode the API key to a file
+          echo "$APP_STORE_CONNECT_KEY_BASE64" | base64 --decode > /tmp/AuthKey.p8
+
+          # Generate a new RSA private key
+          openssl genrsa -out /tmp/dist_key.pem 2048
+
+          # Generate a Certificate Signing Request
+          openssl req -new \
+            -key /tmp/dist_key.pem \
+            -out /tmp/dist.csr \
+            -subj "/CN=Apple Distribution/O=DrinkScanAI/C=US"
+
+          # CSR content as base64 for the API
+          CSR_CONTENT=$(openssl req -in /tmp/dist.csr -outform DER | base64 | tr -d '\n')
+
+          # Build JWT manually using Python (pre-installed on runner)
+          JWT=$(python3 << PYEOF
+          import jwt, time, sys
+          with open('/tmp/AuthKey.p8', 'r') as f:
+              key = f.read()
+          import os
+          payload = {
+              'iss': os.environ['APP_STORE_CONNECT_ISSUER_ID'],
+              'exp': int(time.time()) + 1200,
+              'aud': 'appstoreconnect-v1'
+          }
+          headers = {'kid': os.environ['APP_STORE_CONNECT_KEY_ID'], 'alg': 'ES256'}
+          token = jwt.encode(payload, key, algorithm='ES256', headers=headers)
+          print(token)
+          PYEOF
+          )
+
+          # Install PyJWT if needed
+          pip3 install PyJWT cryptography --quiet 2>/dev/null || true
+
+          JWT=$(python3 << PYEOF
+          import jwt, time, os
+          with open('/tmp/AuthKey.p8', 'r') as f:
+              key = f.read()
+          payload = {
+              'iss': os.environ['APP_STORE_CONNECT_ISSUER_ID'],
+              'exp': int(time.time()) + 1200,
+              'aud': 'appstoreconnect-v1'
+          }
+          headers = {'kid': os.environ['APP_STORE_CONNECT_KEY_ID'], 'alg': 'ES256'}
+          print(jwt.encode(payload, key, algorithm='ES256', headers=headers))
+          PYEOF
+          )
+
+          echo "JWT generated: ${JWT:0:20}..."
+
+          # Submit CSR to App Store Connect API to create a new certificate
+          RESPONSE=$(curl -s -X POST \
+            "https://api.appstoreconnect.apple.com/v1/certificates" \
+            -H "Authorization: Bearer $JWT" \
+            -H "Content-Type: application/json" \
+            -d "{\"data\":{\"type\":\"certificates\",\"attributes\":{\"certificateType\":\"IOS_DISTRIBUTION\",\"csrContent\":\"$CSR_CONTENT\"}}}")
+
+          echo "API response received"
+
+          # Extract certificate content
+          CERT_CONTENT=$(echo "$RESPONSE" | python3 -c "
+          import sys, json
+          try:
+              d = json.load(sys.stdin)
+              print(d['data']['attributes']['certificateContent'])
+          except Exception as e:
+              print('ERROR: ' + str(e), file=sys.stderr)
+              print(sys.stdin.read() if hasattr(sys.stdin, 'read') else '', file=sys.stderr)
+              sys.exit(1)
+          ")
+
+          # Decode certificate from Apple
+          echo "$CERT_CONTENT" | base64 --decode > /tmp/dist.cer
+
+          # Convert DER to PEM
+          openssl x509 -in /tmp/dist.cer -inform DER -out /tmp/dist.pem
+
+          # Create .p12 combining cert + private key
+          CERT_PASSWORD="Kaykaybee$2412"
+          openssl pkcs12 -export \
+            -out /tmp/distribution.p12 \
+            -inkey /tmp/dist_key.pem \
+            -in /tmp/dist.pem \
+            -passout pass:"$CERT_PASSWORD" \
+            -legacy
+
+          echo ""
+          echo "============================================"
+          echo "SUCCESS! Copy the values below into GitHub Secrets"
+          echo "============================================"
+          echo ""
+          echo "Secret name: CERTIFICATE_BASE64"
+          echo "Secret value:"
+          base64 -i /tmp/distribution.p12 | tr -d '\n'
+          echo ""
+          echo ""
+          echo "Secret name: CERTIFICATE_PASSWORD"
+          echo "Secret value: $CERT_PASSWORD"
+          echo "============================================"
+
+      - name: Upload certificate artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: distribution-certificate
+          path: /tmp/distribution.p12
+          retention-days: 1

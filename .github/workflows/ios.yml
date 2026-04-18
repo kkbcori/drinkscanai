@@ -37,6 +37,13 @@ jobs:
           key: pods-${{ hashFiles('ios/Podfile.lock') }}
           restore-keys: pods-
 
+      - name: Decode distribution certificate
+        env:
+          CERTIFICATE_BASE64: ${{ secrets.CERTIFICATE_BASE64 }}
+        run: |
+          echo "$CERTIFICATE_BASE64" | tr -d ' \n\r\t' | base64 --decode > distribution.p12
+          file distribution.p12
+
       - name: Decode provisioning profile
         env:
           PROVISIONING_PROFILE_BASE64: ${{ secrets.PROVISIONING_PROFILE_BASE64 }}
@@ -48,6 +55,7 @@ jobs:
           APP_STORE_CONNECT_KEY_ID:     ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           APP_STORE_CONNECT_ISSUER_ID:  ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
           APP_STORE_CONNECT_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_KEY_BASE64 }}
+          CERTIFICATE_PASSWORD:         ${{ secrets.CERTIFICATE_PASSWORD }}
           FASTLANE_XCODEBUILD_SETTINGS_TIMEOUT: "120"
         run: bundle exec fastlane beta
 
