@@ -41,14 +41,18 @@ jobs:
         env:
           CERTIFICATE_BASE64: ${{ secrets.CERTIFICATE_BASE64 }}
         run: |
-          echo "$CERTIFICATE_BASE64" | base64 --decode > distribution.p12
-          security verify-cert -c distribution.p12 2>/dev/null || echo "Note: cert verify skipped"
+          # Strip all whitespace/newlines before decoding — fixes malformed base64
+          echo "$CERTIFICATE_BASE64" | tr -d ' \n\r\t' | base64 --decode > distribution.p12
+          # Verify the file is a valid PKCS12
+          file distribution.p12
+          ls -lh distribution.p12
 
       - name: Decode provisioning profile
         env:
           PROVISIONING_PROFILE_BASE64: ${{ secrets.PROVISIONING_PROFILE_BASE64 }}
         run: |
-          echo "$PROVISIONING_PROFILE_BASE64" | base64 --decode > DrinkScan_Distribution.mobileprovision
+          echo "$PROVISIONING_PROFILE_BASE64" | tr -d ' \n\r\t' | base64 --decode > DrinkScan_Distribution.mobileprovision
+          file DrinkScan_Distribution.mobileprovision
 
       - name: Build and upload to TestFlight
         env:
