@@ -4,10 +4,6 @@ require_relative '../node_modules/@react-native-community/cli-platform-ios/nativ
 platform :ios, min_ios_version_supported
 prepare_react_native_project!
 
-# Flipper disabled — simplifies the build for beginners
-# To re-enable: remove the :flipper_configuration line below
-flipper_config = FlipperConfiguration.disabled
-
 linkage = ENV['USE_FRAMEWORKS']
 if linkage != nil
   Pod::UI.puts "Configuring Pod with #{linkage}ally linked Frameworks".green
@@ -22,21 +18,6 @@ target 'DrinkScanAI' do
     :app_path => "#{Pod::Config.instance.installation_root}/..",
     :flipper_configuration => FlipperConfiguration.disabled
   )
-
-  # ARKit is a native iOS framework — no pod needed, just import in Swift
-  # Make sure ARKit capability is enabled in Xcode → Signing & Capabilities
-
-  # Gesture handler (required by React Navigation)
-  pod 'RNGestureHandler', :path => '../node_modules/react-native-gesture-handler'
-
-  # Reanimated
-  pod 'RNReanimated', :path => '../node_modules/react-native-reanimated'
-
-  # Vision Camera
-  pod 'VisionCamera', :path => '../node_modules/react-native-vision-camera'
-
-  # Quick SQLite (for nutrition + history DB in production)
-  pod 'react-native-quick-sqlite', :path => '../node_modules/react-native-quick-sqlite'
 
   post_install do |installer|
     react_native_post_install(
