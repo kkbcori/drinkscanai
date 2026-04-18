@@ -56,7 +56,6 @@ platform :ios do
       output_directory: "./build",
       output_name:      "DrinkScanAI.ipa",
       clean:            true,
-      api_key:          api_key,
       export_options: {
         provisioningProfiles: {
           "com.drinkscanai" => "DrinkScan Distribution"
