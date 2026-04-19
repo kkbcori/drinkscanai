@@ -20,7 +20,6 @@ platform :ios do
       is_key_content_base64: true
     )
 
-    # Import distribution certificate
     import_certificate(
       certificate_path:     "distribution.p12",
       certificate_password: ENV["CERTIFICATE_PASSWORD"].to_s.strip,
@@ -38,7 +37,6 @@ platform :ios do
       app_identifier: "com.drinkscanai"
     )
 
-    # Manual signing with distribution cert + profile
     update_code_signing_settings(
       use_automatic_signing: false,
       path:                  "ios/DrinkScanAI.xcodeproj",
