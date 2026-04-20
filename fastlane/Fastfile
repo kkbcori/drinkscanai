@@ -54,20 +54,16 @@ platform :ios do
     # NOTE: cocoapods already runs in the workflow before this step
     # Do NOT call cocoapods here — it would reinstall without cache
 
-    # Archive with signing disabled — prevents the Embed Pods Frameworks hang
-    # Signing is applied separately in the export step via export_options
     build_app(
-      workspace:         "ios/DrinkScanAI.xcworkspace",
-      scheme:            "DrinkScanAI",
-      configuration:     "Release",
-      output_directory:  "./build",
-      output_name:       "DrinkScanAI.ipa",
-      xcargs:            "CODE_SIGN_IDENTITY='' CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO",
-      export_method:     "app-store",
+      workspace:        "ios/DrinkScanAI.xcworkspace",
+      scheme:           "DrinkScanAI",
+      configuration:    "Release",
+      output_directory: "./build",
+      output_name:      "DrinkScanAI.ipa",
+      export_method:    "app-store",
       export_options: {
         method:               "app-store",
         signingStyle:         "manual",
-        signingCertificate:   "iPhone Distribution: #{ENV['TEAM_NAME'] || 'Apple Distribution'}",
         teamID:               "THN78NT3R9",
         provisioningProfiles: {
           "com.drinkscanai" => "DrinkScan Distribution"
