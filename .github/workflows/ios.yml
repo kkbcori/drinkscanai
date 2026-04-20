@@ -39,27 +39,14 @@ jobs:
           ruby-version: "3.2"
           bundler-cache: true
 
+      # Cache key includes Podfile hash so any Podfile change triggers fresh install
       - name: Cache CocoaPods
         uses: actions/cache@v4
         id: pods-cache
         with:
-          path: |
-            ios/Pods
-            ios/Podfile.lock
-          key: pods-${{ hashFiles('ios/Podfile') }}-${{ hashFiles('package.json') }}
-          restore-keys: |
-            pods-${{ hashFiles('ios/Podfile') }}-
-            pods-
-
-      - name: Cache Xcode DerivedData
-        uses: actions/cache@v4
-        with:
-          path: ~/Library/Developer/Xcode/DerivedData
-          key: derived-${{ hashFiles('ios/Podfile') }}-${{ hashFiles('package.json') }}-${{ hashFiles('src/**/*.ts') }}-${{ hashFiles('src/**/*.tsx') }}
-          restore-keys: |
-            derived-${{ hashFiles('ios/Podfile') }}-${{ hashFiles('package.json') }}-
-            derived-${{ hashFiles('ios/Podfile') }}-
-            derived-
+          path: ios/Pods
+          key: pods-v2-${{ hashFiles('ios/Podfile') }}
+          restore-keys: pods-v2-
 
       - name: Decode distribution certificate
         env:
@@ -67,14 +54,21 @@ jobs:
         run: |
           echo "$CERTIFICATE_BASE64" | tr -d ' \n\r\t' | base64 --decode > distribution.p12
           file distribution.p12
-          ls -lh distribution.p12
 
       - name: Verify certificate password
         env:
           CERTIFICATE_PASSWORD: ${{ secrets.CERTIFICATE_PASSWORD }}
         run: |
           echo "Password length: ${#CERTIFICATE_PASSWORD}"
-          openssl pkcs12 -in distribution.p12 -passin env:CERTIFICATE_PASSWORD -nokeys -noout 2>&1 && echo "Password OK" || echo "Password WRONG"
+          openssl pkcs12 -in distribution.p12 \
+            -passin env:CERTIFICATE_PASSWORD \
+            -nokeys -noout -legacy 2>&1 \
+            && echo "✓ Password OK" \
+            || openssl pkcs12 -in distribution.p12 \
+              -passin env:CERTIFICATE_PASSWORD \
+              -nokeys -noout 2>&1 \
+              && echo "✓ Password OK (modern)" \
+              || echo "✗ Password WRONG"
 
       - name: Decode provisioning profile
         env:
@@ -82,18 +76,18 @@ jobs:
         run: |
           echo "$PROVISIONING_PROFILE_BASE64" | tr -d ' \n\r\t' | base64 --decode > DrinkScan_Distribution.mobileprovision
 
-      - name: Install CocoaPods
+      # Only run pod install if cache missed or Podfile changed
+      - name: Install CocoaPods dependencies
         if: steps.pods-cache.outputs.cache-hit != 'true'
-        run: |
-          cd ios && bundle exec pod install && cd ..
+        run: cd ios && bundle exec pod install && cd ..
 
       - name: Build and upload to TestFlight
         env:
-          APP_STORE_CONNECT_KEY_ID:     ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
-          APP_STORE_CONNECT_ISSUER_ID:  ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
-          APP_STORE_CONNECT_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_KEY_BASE64 }}
-          CERTIFICATE_PASSWORD:         ${{ secrets.CERTIFICATE_PASSWORD }}
-          FASTLANE_XCODEBUILD_SETTINGS_TIMEOUT: "120"
+          APP_STORE_CONNECT_KEY_ID:               ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID:            ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_KEY_BASE64:           ${{ secrets.APP_STORE_CONNECT_KEY_BASE64 }}
+          CERTIFICATE_PASSWORD:                   ${{ secrets.CERTIFICATE_PASSWORD }}
+          FASTLANE_XCODEBUILD_SETTINGS_TIMEOUT:  "120"
         run: bundle exec fastlane beta
 
       - name: Upload build logs on failure
