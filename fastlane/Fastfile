@@ -66,6 +66,7 @@ platform :ios do
 
     # Step 2: Export the archive WITH proper signing (xcargs not passed here)
     build_app(
+      workspace:          "ios/DrinkScanAI.xcworkspace",
       skip_build_archive: true,
       archive_path:       "./build/DrinkScanAI.xcarchive",
       export_method:      "app-store",
