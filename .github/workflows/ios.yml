@@ -47,7 +47,6 @@ jobs:
           key: pods-xc16-${{ hashFiles('ios/Podfile') }}
 
       - name: Install CocoaPods
-        if: steps.pods-cache.outputs.cache-hit != 'true'
         run: cd ios && bundle exec pod install && cd ..
 
       - name: Generate app icons
