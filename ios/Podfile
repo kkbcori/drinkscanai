@@ -15,8 +15,7 @@ target 'DrinkScanAI' do
 
   use_react_native!(
     :path => config[:reactNativePath],
-    :app_path => "#{Pod::Config.instance.installation_root}/..",
-    :flipper_configuration => FlipperConfiguration.disabled
+    :app_path => "#{Pod::Config.instance.installation_root}/.."
   )
 
   post_install do |installer|
@@ -26,19 +25,16 @@ target 'DrinkScanAI' do
       :mac_catalyst_enabled => false
     )
 
-    # Disable code signing on ALL pod targets
-    # This is critical — without this, the Embed Pods Frameworks
-    # script hangs indefinitely in CI when no signing identity is present
+    # Disable code signing on all Pod targets — prevents Embed Pods Frameworks hang in CI
     installer.pods_project.targets.each do |target|
       target.build_configurations.each do |cfg|
-        cfg.build_settings['CODE_SIGNING_ALLOWED']    = 'NO'
-        cfg.build_settings['CODE_SIGNING_REQUIRED']   = 'NO'
-        cfg.build_settings['CODE_SIGN_IDENTITY']      = ''
+        cfg.build_settings['CODE_SIGNING_ALLOWED']        = 'NO'
+        cfg.build_settings['CODE_SIGNING_REQUIRED']       = 'NO'
+        cfg.build_settings['CODE_SIGN_IDENTITY']          = ''
         cfg.build_settings['EXPANDED_CODE_SIGN_IDENTITY'] = ''
       end
     end
 
-    # Also apply to aggregate targets (e.g. Pods-DrinkScanAI)
     installer.aggregate_targets.each do |target|
       target.xcconfigs.each do |config_name, config_file|
         config_file.attributes['CODE_SIGNING_ALLOWED']  = 'NO'
