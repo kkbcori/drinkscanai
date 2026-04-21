@@ -43,7 +43,7 @@ jobs:
         id: pods-cache
         with:
           path: ios/Pods
-          key: pods-opsql-${{ hashFiles('ios/Podfile') }}
+          key: pods-ios18-${{ hashFiles('ios/Podfile') }}
 
       - name: Install CocoaPods
         run: cd ios && bundle exec pod install && cd ..
