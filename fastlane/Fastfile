@@ -11,7 +11,10 @@ platform :ios do
   desc "Build and upload to TestFlight"
   lane :beta do
 
-    setup_ci
+    # NOTE: setup_ci and import_certificate are intentionally skipped
+    # The keychain is created and the certificate is imported in the
+    # GitHub Actions workflow step before Fastlane runs, using a known
+    # password so set-key-partition-list can pre-authorize codesign.
 
     api_key = app_store_connect_api_key(
       key_id:                ENV["APP_STORE_CONNECT_KEY_ID"],
@@ -19,17 +22,6 @@ platform :ios do
       key_content:           ENV["APP_STORE_CONNECT_KEY_BASE64"],
       is_key_content_base64: true
     )
-
-    import_certificate(
-      certificate_path:     "distribution.p12",
-      certificate_password: ENV["CERTIFICATE_PASSWORD"].to_s.strip,
-      keychain_name:        "fastlane_tmp_keychain",
-      keychain_password:    "fastlane_tmp_keychain_password"
-    )
-
-    # Pre-authorize codesign to access the private key without GUI prompt
-    sh "security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k fastlane_tmp_keychain_password ~/Library/Keychains/fastlane_tmp_keychain-db || true"
-    sh "security set-keychain-settings -lut 21600 ~/Library/Keychains/fastlane_tmp_keychain-db || true"
 
     install_provisioning_profile(
       path: "DrinkScan_Distribution.mobileprovision"
@@ -55,20 +47,18 @@ platform :ios do
       xcodeproj:    "ios/DrinkScanAI.xcodeproj"
     )
 
-    # Step 1: Archive ONLY — signing disabled to prevent Embed Pods Frameworks hang
-    # This works because the Podfile post_install disables signing on Pod targets,
-    # but when Pods are cached that hook doesn't re-run. xcargs overrides it.
+    # Step 1: Archive with signing disabled on frameworks (prevents Embed hang)
     build_app(
-      workspace:          "ios/DrinkScanAI.xcworkspace",
-      scheme:             "DrinkScanAI",
-      configuration:      "Release",
-      skip_package_ipa:   true,
-      archive_path:       "./build/DrinkScanAI.xcarchive",
-      xcargs:             "CODE_SIGN_IDENTITY='' CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO",
-      output_directory:   "./build"
+      workspace:        "ios/DrinkScanAI.xcworkspace",
+      scheme:           "DrinkScanAI",
+      configuration:    "Release",
+      skip_package_ipa: true,
+      archive_path:     "./build/DrinkScanAI.xcarchive",
+      xcargs:           "CODE_SIGN_IDENTITY='' CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO",
+      output_directory: "./build"
     )
 
-    # Step 2: Export the archive WITH proper signing (xcargs not passed here)
+    # Step 2: Export with proper signing — codesign pre-authorized via workflow
     build_app(
       workspace:          "ios/DrinkScanAI.xcworkspace",
       skip_build_archive: true,
@@ -92,7 +82,7 @@ platform :ios do
       changelog:                         "Automated build from GitHub Actions"
     )
 
-    UI.success "Successfully uploaded to TestFlight!"
+    UI.success "Successfully uploaded to TestFlight! 🎉"
   end
 
   error do |lane, exception|
