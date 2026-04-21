@@ -1,164 +1,74 @@
-// nutritionDB.ts
-// Local SQLite-backed nutrition lookup.
-// In production, use react-native-quick-sqlite and bundle a pre-populated .db file.
-// This file provides the interface and a seed dataset for development.
+/**
+ * Nutrition Database
+ * 
+ * Uses react-native-quick-sqlite to query a bundled SQLite DB
+ * populated from USDA FoodData Central.
+ * 
+ * Phase 2: This catalog can be synced/updated from Supabase
+ * without requiring an app store update.
+ */
 
-export interface NutritionEntry {
-  id: string
+import { open } from 'react-native-quick-sqlite'
+import type { NutritionInfo, DrinkCategory } from '../types'
+
+// Bundled drink catalog — will be replaced by USDA SQLite in next iteration
+// Keyed by drink ID matching MobileNetV3 class labels
+const DRINK_CATALOG: Record<string, {
   name: string
-  category: string
-  calories_per_100ml: number
-  caffeine_mg_per_100ml: number
-  carbs_g_per_100ml: number
-  protein_g_per_100ml: number
-  fat_g_per_100ml: number
-  sugar_g_per_100ml: number
+  category: DrinkCategory
+  // Nutrition per 100ml
+  caloriesPer100ml: number
+  caffeineMgPer100ml: number
+  carbsGPer100ml: number
+  proteinGPer100ml: number
+  fatGPer100ml: number
+  sugarGPer100ml: number
+}> = {
+  coffee_black:        { name: 'Coffee, Black',         category: 'coffee',       caloriesPer100ml: 1,   caffeineMgPer100ml: 40,  carbsGPer100ml: 0,    proteinGPer100ml: 0.1, fatGPer100ml: 0,    sugarGPer100ml: 0 },
+  coffee_latte:        { name: 'Latte',                 category: 'coffee',       caloriesPer100ml: 54,  caffeineMgPer100ml: 27,  carbsGPer100ml: 5.6,  proteinGPer100ml: 3.3, fatGPer100ml: 2.1,  sugarGPer100ml: 5.4 },
+  coffee_cappuccino:   { name: 'Cappuccino',            category: 'coffee',       caloriesPer100ml: 40,  caffeineMgPer100ml: 27,  carbsGPer100ml: 4,    proteinGPer100ml: 2.5, fatGPer100ml: 1.5,  sugarGPer100ml: 4 },
+  coffee_americano:    { name: 'Americano',             category: 'coffee',       caloriesPer100ml: 3,   caffeineMgPer100ml: 35,  carbsGPer100ml: 0.5,  proteinGPer100ml: 0.1, fatGPer100ml: 0,    sugarGPer100ml: 0 },
+  coffee_mocha:        { name: 'Mocha',                 category: 'coffee',       caloriesPer100ml: 70,  caffeineMgPer100ml: 27,  carbsGPer100ml: 9,    proteinGPer100ml: 2.5, fatGPer100ml: 2.5,  sugarGPer100ml: 8 },
+  tea_black:           { name: 'Black Tea',             category: 'tea',          caloriesPer100ml: 1,   caffeineMgPer100ml: 20,  carbsGPer100ml: 0.2,  proteinGPer100ml: 0,   fatGPer100ml: 0,    sugarGPer100ml: 0 },
+  tea_green:           { name: 'Green Tea',             category: 'tea',          caloriesPer100ml: 1,   caffeineMgPer100ml: 12,  carbsGPer100ml: 0.2,  proteinGPer100ml: 0,   fatGPer100ml: 0,    sugarGPer100ml: 0 },
+  tea_matcha:          { name: 'Matcha Latte',          category: 'tea',          caloriesPer100ml: 50,  caffeineMgPer100ml: 35,  carbsGPer100ml: 6,    proteinGPer100ml: 2,   fatGPer100ml: 1.5,  sugarGPer100ml: 5 },
+  tea_herbal:          { name: 'Herbal Tea',            category: 'tea',          caloriesPer100ml: 1,   caffeineMgPer100ml: 0,   carbsGPer100ml: 0.2,  proteinGPer100ml: 0,   fatGPer100ml: 0,    sugarGPer100ml: 0 },
+  water_still:         { name: 'Water',                 category: 'water',        caloriesPer100ml: 0,   caffeineMgPer100ml: 0,   carbsGPer100ml: 0,    proteinGPer100ml: 0,   fatGPer100ml: 0,    sugarGPer100ml: 0 },
+  water_sparkling:     { name: 'Sparkling Water',       category: 'water',        caloriesPer100ml: 0,   caffeineMgPer100ml: 0,   carbsGPer100ml: 0,    proteinGPer100ml: 0,   fatGPer100ml: 0,    sugarGPer100ml: 0 },
+  juice_orange:        { name: 'Orange Juice',          category: 'juice',        caloriesPer100ml: 45,  caffeineMgPer100ml: 0,   carbsGPer100ml: 10.4, proteinGPer100ml: 0.7, fatGPer100ml: 0.2,  sugarGPer100ml: 8.4 },
+  juice_apple:         { name: 'Apple Juice',           category: 'juice',        caloriesPer100ml: 46,  caffeineMgPer100ml: 0,   carbsGPer100ml: 11.3, proteinGPer100ml: 0.1, fatGPer100ml: 0.1,  sugarGPer100ml: 9.6 },
+  soda_cola:           { name: 'Cola',                  category: 'soda',         caloriesPer100ml: 42,  caffeineMgPer100ml: 10,  carbsGPer100ml: 10.6, proteinGPer100ml: 0,   fatGPer100ml: 0,    sugarGPer100ml: 10.6 },
+  soda_diet:           { name: 'Diet Soda',             category: 'soda',         caloriesPer100ml: 0,   caffeineMgPer100ml: 12,  carbsGPer100ml: 0.1,  proteinGPer100ml: 0,   fatGPer100ml: 0,    sugarGPer100ml: 0 },
+  milk_whole:          { name: 'Whole Milk',            category: 'milk',         caloriesPer100ml: 61,  caffeineMgPer100ml: 0,   carbsGPer100ml: 4.8,  proteinGPer100ml: 3.2, fatGPer100ml: 3.3,  sugarGPer100ml: 4.8 },
+  milk_oat:            { name: 'Oat Milk',              category: 'milk',         caloriesPer100ml: 47,  caffeineMgPer100ml: 0,   carbsGPer100ml: 6.7,  proteinGPer100ml: 1,   fatGPer100ml: 1.5,  sugarGPer100ml: 4 },
+  milk_almond:         { name: 'Almond Milk',           category: 'milk',         caloriesPer100ml: 17,  caffeineMgPer100ml: 0,   carbsGPer100ml: 1.5,  proteinGPer100ml: 0.6, fatGPer100ml: 1.1,  sugarGPer100ml: 1 },
+  energy_drink:        { name: 'Energy Drink',          category: 'energy_drink', caloriesPer100ml: 45,  caffeineMgPer100ml: 32,  carbsGPer100ml: 11,   proteinGPer100ml: 0,   fatGPer100ml: 0,    sugarGPer100ml: 11 },
+  smoothie_fruit:      { name: 'Fruit Smoothie',        category: 'smoothie',     caloriesPer100ml: 62,  caffeineMgPer100ml: 0,   carbsGPer100ml: 14,   proteinGPer100ml: 1,   fatGPer100ml: 0.3,  sugarGPer100ml: 12 },
+  unknown:             { name: 'Unknown Drink',         category: 'unknown',      caloriesPer100ml: 30,  caffeineMgPer100ml: 0,   carbsGPer100ml: 5,    proteinGPer100ml: 0.5, fatGPer100ml: 0.5,  sugarGPer100ml: 3 },
 }
 
-// ─── Seed data (replace with full USDA FDC dataset in production) ────────────
-const DRINK_DB: Record<string, NutritionEntry> = {
-  black_coffee: {
-    id: 'black_coffee',
-    name: 'Black coffee',
-    category: 'coffee',
-    calories_per_100ml: 2,
-    caffeine_mg_per_100ml: 40,
-    carbs_g_per_100ml: 0,
-    protein_g_per_100ml: 0.1,
-    fat_g_per_100ml: 0,
-    sugar_g_per_100ml: 0,
-  },
-  coffee_latte: {
-    id: 'coffee_latte',
-    name: 'Latte',
-    category: 'coffee',
-    calories_per_100ml: 54,
-    caffeine_mg_per_100ml: 24,
-    carbs_g_per_100ml: 5.1,
-    protein_g_per_100ml: 3.4,
-    fat_g_per_100ml: 2.1,
-    sugar_g_per_100ml: 5.0,
-  },
-  espresso: {
-    id: 'espresso',
-    name: 'Espresso',
-    category: 'coffee',
-    calories_per_100ml: 9,
-    caffeine_mg_per_100ml: 212,
-    carbs_g_per_100ml: 1.7,
-    protein_g_per_100ml: 0.6,
-    fat_g_per_100ml: 0.2,
-    sugar_g_per_100ml: 0,
-  },
-  whole_milk: {
-    id: 'whole_milk',
-    name: 'Whole milk',
-    category: 'dairy',
-    calories_per_100ml: 61,
-    caffeine_mg_per_100ml: 0,
-    carbs_g_per_100ml: 4.8,
-    protein_g_per_100ml: 3.2,
-    fat_g_per_100ml: 3.3,
-    sugar_g_per_100ml: 4.8,
-  },
-  orange_juice: {
-    id: 'orange_juice',
-    name: 'Orange juice',
-    category: 'juice',
-    calories_per_100ml: 45,
-    caffeine_mg_per_100ml: 0,
-    carbs_g_per_100ml: 10.4,
-    protein_g_per_100ml: 0.7,
-    fat_g_per_100ml: 0.2,
-    sugar_g_per_100ml: 8.4,
-  },
-  cola: {
-    id: 'cola',
-    name: 'Cola',
-    category: 'soda',
-    calories_per_100ml: 37,
-    caffeine_mg_per_100ml: 10,
-    carbs_g_per_100ml: 9.6,
-    protein_g_per_100ml: 0,
-    fat_g_per_100ml: 0,
-    sugar_g_per_100ml: 9.6,
-  },
-  water: {
-    id: 'water',
-    name: 'Water',
-    category: 'water',
-    calories_per_100ml: 0,
-    caffeine_mg_per_100ml: 0,
-    carbs_g_per_100ml: 0,
-    protein_g_per_100ml: 0,
-    fat_g_per_100ml: 0,
-    sugar_g_per_100ml: 0,
-  },
-  beer: {
-    id: 'beer',
-    name: 'Beer (regular)',
-    category: 'alcohol',
-    calories_per_100ml: 43,
-    caffeine_mg_per_100ml: 0,
-    carbs_g_per_100ml: 3.6,
-    protein_g_per_100ml: 0.5,
-    fat_g_per_100ml: 0,
-    sugar_g_per_100ml: 0,
-  },
-  green_tea: {
-    id: 'green_tea',
-    name: 'Green tea',
-    category: 'tea',
-    calories_per_100ml: 1,
-    caffeine_mg_per_100ml: 12,
-    carbs_g_per_100ml: 0,
-    protein_g_per_100ml: 0,
-    fat_g_per_100ml: 0,
-    sugar_g_per_100ml: 0,
-  },
+export function getDrinkInfo(drinkId: string) {
+  return DRINK_CATALOG[drinkId] ?? DRINK_CATALOG['unknown']
 }
 
-// ─── API ─────────────────────────────────────────────────────────────────────
-
-/**
- * Look up nutrition data by drink ID.
- * In production this queries the bundled SQLite file.
- */
-export async function lookupNutrition(drinkId: string): Promise<NutritionEntry | null> {
-  // TODO: replace with: await db.executeAsync('SELECT * FROM drinks WHERE id = ?', [drinkId])
-  return DRINK_DB[drinkId] ?? null
+export function getAllDrinkIds(): string[] {
+  return Object.keys(DRINK_CATALOG)
 }
 
-/**
- * Search drinks by partial name match.
- * Used for the manual override / correction flow.
- */
-export async function searchDrinks(query: string): Promise<NutritionEntry[]> {
-  const q = query.toLowerCase()
-  return Object.values(DRINK_DB).filter(
-    d => d.name.toLowerCase().includes(q) || d.category.includes(q)
-  )
-}
-
-/**
- * Calculate nutrition totals for a given drink and volume.
- */
-export function calculateNutrition(
-  entry: NutritionEntry,
-  volumeMl: number,
-  fillPercent: number = 100
-) {
-  const effective = volumeMl * (fillPercent / 100)
-  const factor = effective / 100
+export function calculateNutrition(drinkId: string, liquidVolumeMl: number): NutritionInfo {
+  const drink = getDrinkInfo(drinkId)
+  const ratio = liquidVolumeMl / 100
 
   return {
-    drink: entry.name,
-    volume_ml: Math.round(effective),
-    calories: Math.round(entry.calories_per_100ml * factor),
-    caffeine_mg: Math.round(entry.caffeine_mg_per_100ml * factor),
-    carbs_g: Math.round(entry.carbs_g_per_100ml * factor * 10) / 10,
-    protein_g: Math.round(entry.protein_g_per_100ml * factor * 10) / 10,
-    fat_g: Math.round(entry.fat_g_per_100ml * factor * 10) / 10,
-    sugar_g: Math.round(entry.sugar_g_per_100ml * factor * 10) / 10,
+    calories:      Math.round(drink.caloriesPer100ml     * ratio),
+    caffeineGrams: Math.round(drink.caffeineMgPer100ml   * ratio) / 1000,
+    carbsGrams:    Math.round(drink.carbsGPer100ml       * ratio * 10) / 10,
+    proteinGrams:  Math.round(drink.proteinGPer100ml     * ratio * 10) / 10,
+    fatGrams:      Math.round(drink.fatGPer100ml         * ratio * 10) / 10,
+    sugarGrams:    Math.round(drink.sugarGPer100ml       * ratio * 10) / 10,
   }
+}
+
+export function getDrinkName(drinkId: string): string {
+  return getDrinkInfo(drinkId).name
 }

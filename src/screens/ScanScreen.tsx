@@ -1,298 +1,402 @@
-import React, { useState, useRef, useCallback } from 'react'
+import React, { useState, useRef, useCallback, useEffect } from 'react'
 import {
-  View,
-  Text,
-  TouchableOpacity,
-  StyleSheet,
-  ActivityIndicator,
-  Alert,
-  Platform,
+  View, Text, TouchableOpacity, StyleSheet,
+  ActivityIndicator, Alert, ScrollView, Modal,
 } from 'react-native'
 import {
-  Camera,
-  useCameraDevice,
-  useCameraPermission,
-  useVideoRecording,
+  Camera, useCameraDevice, useCameraPermission,
 } from 'react-native-vision-camera'
+import type { ScanResult, DrinkIdentification } from '../types'
+import { classifyDrink, getTopCandidates } from '../ml/drinkClassifier'
+import { estimateVolume } from '../ar/volumeEstimator'
+import { calculateNutrition, getDrinkName, getAllDrinkIds, getDrinkInfo } from '../db/nutritionDB'
+import { saveScan, confirmScan, updateCorrection, initDB, generateScanId } from '../db/historyDB'
 
-type ScanResult = {
-  drink: string
-  volume: number
-  fillLevel: number
-  calories: number
-  caffeine: number
-  confidence: number
-}
-
-type ScanState = 'idle' | 'permission' | 'scanning' | 'analyzing' | 'result'
+type ScanState = 'idle' | 'recording' | 'analyzing' | 'result'
 
 export default function ScanScreen() {
   const [scanState, setScanState] = useState<ScanState>('idle')
+  const [countdown, setCountdown] = useState(5)
   const [result, setResult] = useState<ScanResult | null>(null)
-  const [countdown, setCountdown] = useState(0)
+  const [candidates, setCandidates] = useState<DrinkIdentification[]>([])
+  const [showCorrection, setShowCorrection] = useState(false)
 
-  const device = useCameraDevice('back')
-  const { hasPermission, requestPermission } = useCameraPermission()
   const cameraRef = useRef<Camera>(null)
+  const countdownRef = useRef<NodeJS.Timeout | null>(null)
 
-  const handleRequestPermission = useCallback(async () => {
-    setScanState('permission')
-    const granted = await requestPermission()
-    setScanState(granted ? 'idle' : 'idle')
-  }, [requestPermission])
+  const { hasPermission, requestPermission } = useCameraPermission()
+  const device = useCameraDevice('back')
+
+  useEffect(() => {
+    initDB()
+    return () => {
+      if (countdownRef.current) clearInterval(countdownRef.current)
+    }
+  }, [])
 
   const startScan = useCallback(async () => {
     if (!hasPermission) {
-      await handleRequestPermission()
-      return
+      const granted = await requestPermission()
+      if (!granted) return
     }
     if (!cameraRef.current || !device) return
 
-    setScanState('scanning')
+    setScanState('recording')
     setResult(null)
 
-    // 5-second countdown while recording
+    // Start countdown
     let count = 5
     setCountdown(count)
-    const timer = setInterval(() => {
+    countdownRef.current = setInterval(() => {
       count -= 1
       setCountdown(count)
-      if (count === 0) clearInterval(timer)
+      if (count <= 0 && countdownRef.current) {
+        clearInterval(countdownRef.current)
+      }
     }, 1000)
 
-    try {
-      // Start video recording
-      cameraRef.current.startRecording({
-        onRecordingFinished: async (video) => {
-          setScanState('analyzing')
-          // TODO: Pass video.path to ARKit for volume estimation
-          // TODO: Pass video frames to ML model for drink identification
-          // For now simulate analysis with realistic delay
-          await new Promise(r => setTimeout(r, 2000))
-
-          // Placeholder result — real ML + AR results will replace this
-          setResult({
-            drink: 'Coffee (Black)',
-            volume: 354,
-            fillLevel: 82,
-            calories: 5,
-            caffeine: 95,
-            confidence: 0.91,
-          })
-          setScanState('result')
-        },
-        onRecordingError: (error) => {
-          console.error('Recording error:', error)
-          setScanState('idle')
-        },
-      })
-
-      // Stop recording after 5 seconds
-      setTimeout(async () => {
+    // Start recording
+    cameraRef.current.startRecording({
+      onRecordingFinished: async (video) => {
+        setScanState('analyzing')
         try {
-          await cameraRef.current?.stopRecording()
+          // Run ML + AR in parallel
+          const [identification, volume, topCandidates] = await Promise.all([
+            classifyDrink(video.path),
+            estimateVolume(video.path),
+            getTopCandidates(video.path, 3),
+          ])
+
+          const nutrition = calculateNutrition(
+            identification.drinkId,
+            volume.liquidVolumeMl
+          )
+
+          const scanResult: ScanResult = {
+            scanId:          generateScanId(),
+            timestamp:       new Date().toISOString(),
+            identification,
+            volume,
+            nutrition,
+            userConfirmed:   false,
+            syncedToCloud:   false,
+          }
+
+          saveScan(scanResult)
+          setResult(scanResult)
+          setCandidates(topCandidates)
+          setScanState('result')
         } catch (e) {
-          console.error('Stop recording error:', e)
+          console.error('Analysis error:', e)
+          Alert.alert('Scan Failed', 'Could not analyze the drink. Please try again.')
+          setScanState('idle')
         }
-      }, 5000)
-    } catch (e) {
-      console.error('Start recording error:', e)
-      setScanState('idle')
-    }
-  }, [hasPermission, device, handleRequestPermission])
+      },
+      onRecordingError: (error) => {
+        console.error('Recording error:', error)
+        setScanState('idle')
+      },
+    })
+
+    // Stop after 5 seconds
+    setTimeout(async () => {
+      try {
+        await cameraRef.current?.stopRecording()
+      } catch (e) {
+        console.error('Stop error:', e)
+      }
+    }, 5000)
+  }, [hasPermission, device, requestPermission])
+
+  const handleConfirm = useCallback(() => {
+    if (!result) return
+    confirmScan(result.scanId)
+    Alert.alert('✅ Saved', 'Scan confirmed and saved to history.')
+    setScanState('idle')
+    setResult(null)
+  }, [result])
+
+  const handleCorrect = useCallback((drinkId: string) => {
+    if (!result) return
+    const correctedName = getDrinkName(drinkId)
+    updateCorrection(result.scanId, correctedName)
+
+    // Recalculate nutrition with correction
+    const nutrition = calculateNutrition(drinkId, result.volume.liquidVolumeMl)
+    const drinkInfo = getDrinkInfo(drinkId)
+    setResult({
+      ...result,
+      identification: {
+        ...result.identification,
+        drinkId,
+        drinkName: correctedName,
+        category: drinkInfo.category,
+      },
+      nutrition,
+      userCorrection: correctedName,
+    })
+    setShowCorrection(false)
+  }, [result])
 
   const reset = useCallback(() => {
-    setResult(null)
     setScanState('idle')
-    setCountdown(0)
+    setResult(null)
+    setCountdown(5)
   }, [])
 
-  // No camera permission yet
+  // Permission gate
   if (!hasPermission) {
     return (
-      <View style={styles.centerContainer}>
-        <Text style={styles.emoji}>📷</Text>
-        <Text style={styles.title}>Camera Access Needed</Text>
-        <Text style={styles.subtitle}>
-          DrinkScanAI needs camera access to scan your drink
-        </Text>
-        <TouchableOpacity style={styles.button} onPress={handleRequestPermission}>
-          <Text style={styles.buttonText}>Allow Camera</Text>
+      <View style={styles.centered}>
+        <Text style={styles.permIcon}>📷</Text>
+        <Text style={styles.permTitle}>Camera Access Required</Text>
+        <Text style={styles.permSub}>DrinkScanAI needs camera access to scan your drink</Text>
+        <TouchableOpacity style={styles.btn} onPress={requestPermission}>
+          <Text style={styles.btnText}>Allow Camera</Text>
         </TouchableOpacity>
       </View>
     )
   }
 
-  // No back camera found
   if (!device) {
     return (
-      <View style={styles.centerContainer}>
-        <Text style={styles.emoji}>⚠️</Text>
-        <Text style={styles.title}>Camera Not Found</Text>
-        <Text style={styles.subtitle}>Could not access the rear camera</Text>
+      <View style={styles.centered}>
+        <Text style={styles.permIcon}>⚠️</Text>
+        <Text style={styles.permTitle}>Camera Unavailable</Text>
       </View>
     )
   }
 
   return (
     <View style={styles.container}>
-      {/* Camera Preview */}
+      {/* Live camera feed */}
       <Camera
         ref={cameraRef}
-        style={styles.camera}
+        style={StyleSheet.absoluteFill}
         device={device}
-        isActive={scanState !== 'analyzing'}
+        isActive={scanState === 'idle' || scanState === 'recording'}
         video={true}
         audio={false}
       />
 
-      {/* Overlay */}
-      <View style={styles.overlay}>
-        {/* Scanning frame guide */}
-        <View style={styles.frameGuide}>
-          <View style={[styles.corner, styles.topLeft]} />
-          <View style={[styles.corner, styles.topRight]} />
-          <View style={[styles.corner, styles.bottomLeft]} />
-          <View style={[styles.corner, styles.bottomRight]} />
-          {scanState === 'scanning' && countdown > 0 && (
-            <Text style={styles.countdown}>{countdown}</Text>
-          )}
-        </View>
+      {/* Dark overlay when analyzing */}
+      {(scanState === 'analyzing') && (
+        <View style={styles.darkOverlay} />
+      )}
 
-        {/* Instruction */}
-        <View style={styles.instructionBox}>
-          {scanState === 'idle' && (
-            <Text style={styles.instruction}>
-              Point camera at your drink cup and tap Scan
-            </Text>
-          )}
-          {scanState === 'scanning' && (
-            <Text style={styles.instruction}>
-              Hold steady — scanning for {countdown}s...
-            </Text>
-          )}
-          {scanState === 'analyzing' && (
-            <Text style={styles.instruction}>Analyzing your drink...</Text>
-          )}
-        </View>
-
-        {/* Analyzing spinner */}
-        {scanState === 'analyzing' && (
-          <View style={styles.analyzingBox}>
-            <ActivityIndicator size="large" color="#fff" />
-            <Text style={styles.analyzingText}>Measuring cup & identifying drink</Text>
+      {/* Corner frame guide */}
+      {(scanState === 'idle' || scanState === 'recording') && (
+        <View style={styles.frameContainer}>
+          <View style={styles.frame}>
+            <View style={[styles.corner, styles.tl]} />
+            <View style={[styles.corner, styles.tr]} />
+            <View style={[styles.corner, styles.bl]} />
+            <View style={[styles.corner, styles.br]} />
+            {scanState === 'recording' && (
+              <Text style={styles.countdown}>{countdown}</Text>
+            )}
           </View>
-        )}
+          <Text style={styles.frameHint}>
+            {scanState === 'idle'
+              ? 'Center your cup in the frame'
+              : `Hold steady — recording for ${countdown}s`}
+          </Text>
+        </View>
+      )}
 
-        {/* Result card */}
-        {scanState === 'result' && result && (
-          <View style={styles.resultCard}>
-            <Text style={styles.resultDrink}>{result.drink}</Text>
-            <Text style={styles.confidenceBadge}>
-              {Math.round(result.confidence * 100)}% confident
-            </Text>
-            <View style={styles.statsRow}>
-              <View style={styles.stat}>
-                <Text style={styles.statValue}>{result.volume}ml</Text>
-                <Text style={styles.statLabel}>Volume</Text>
-              </View>
-              <View style={styles.stat}>
-                <Text style={styles.statValue}>{result.fillLevel}%</Text>
-                <Text style={styles.statLabel}>Fill Level</Text>
-              </View>
-              <View style={styles.stat}>
-                <Text style={styles.statValue}>{result.calories}</Text>
-                <Text style={styles.statLabel}>Calories</Text>
-              </View>
-              <View style={styles.stat}>
-                <Text style={styles.statValue}>{result.caffeine}mg</Text>
-                <Text style={styles.statLabel}>Caffeine</Text>
-              </View>
+      {/* Analyzing state */}
+      {scanState === 'analyzing' && (
+        <View style={styles.analyzingContainer}>
+          <ActivityIndicator size="large" color="#fff" />
+          <Text style={styles.analyzingTitle}>Analyzing your drink...</Text>
+          <Text style={styles.analyzingSteps}>
+            🔍 Identifying drink type{'\n'}
+            📐 Measuring cup volume{'\n'}
+            🧮 Calculating nutrition
+          </Text>
+        </View>
+      )}
+
+      {/* Result card */}
+      {scanState === 'result' && result && (
+        <ScrollView
+          style={styles.resultScroll}
+          contentContainerStyle={styles.resultContent}
+        >
+          {/* Header */}
+          <View style={styles.resultHeader}>
+            <Text style={styles.resultDrink}>{result.identification.drinkName}</Text>
+            <View style={[
+              styles.confidenceBadge,
+              { backgroundColor: result.identification.confidence > 0.8 ? '#E8F5E9' : '#FFF3E0' }
+            ]}>
+              <Text style={[
+                styles.confidenceText,
+                { color: result.identification.confidence > 0.8 ? '#2E7D32' : '#E65100' }
+              ]}>
+                {Math.round(result.identification.confidence * 100)}% confident
+              </Text>
             </View>
-            <TouchableOpacity style={styles.resetButton} onPress={reset}>
-              <Text style={styles.resetButtonText}>Scan Again</Text>
-            </TouchableOpacity>
+            {result.volume.method === 'fallback' && (
+              <Text style={styles.fallbackNote}>
+                ⚠️ Volume estimated (ARKit unavailable)
+              </Text>
+            )}
           </View>
-        )}
 
-        {/* Scan button */}
-        {(scanState === 'idle') && (
-          <TouchableOpacity style={styles.scanButton} onPress={startScan}>
-            <View style={styles.scanButtonInner} />
+          {/* Volume stats */}
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>📐 Volume</Text>
+            <View style={styles.statsRow}>
+              <Stat label="Cup Size" value={`${result.volume.totalVolumeMl}ml`} />
+              <Stat label="Fill Level" value={`${result.volume.fillLevelPct}%`} />
+              <Stat label="Liquid" value={`${result.volume.liquidVolumeMl}ml`} color="#007AFF" />
+            </View>
+          </View>
+
+          {/* Nutrition stats */}
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>🧮 Nutrition</Text>
+            <View style={styles.statsRow}>
+              <Stat label="Calories" value={`${result.nutrition.calories}`} color="#FF6B35" />
+              <Stat label="Caffeine" value={`${Math.round(result.nutrition.caffeineGrams * 1000)}mg`} color="#6B35FF" />
+              <Stat label="Carbs" value={`${result.nutrition.carbsGrams}g`} />
+            </View>
+            <View style={styles.statsRow}>
+              <Stat label="Sugar" value={`${result.nutrition.sugarGrams}g`} />
+              <Stat label="Protein" value={`${result.nutrition.proteinGrams}g`} />
+              <Stat label="Fat" value={`${result.nutrition.fatGrams}g`} />
+            </View>
+          </View>
+
+          {/* Action buttons */}
+          <TouchableOpacity style={styles.confirmBtn} onPress={handleConfirm}>
+            <Text style={styles.confirmBtnText}>✅ Confirm & Save</Text>
           </TouchableOpacity>
-        )}
-      </View>
+
+          <TouchableOpacity
+            style={styles.correctBtn}
+            onPress={() => setShowCorrection(true)}
+          >
+            <Text style={styles.correctBtnText}>✏️ Correct Drink Type</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.retryBtn} onPress={reset}>
+            <Text style={styles.retryBtnText}>🔄 Scan Again</Text>
+          </TouchableOpacity>
+        </ScrollView>
+      )}
+
+      {/* Scan button */}
+      {scanState === 'idle' && (
+        <View style={styles.scanBtnContainer}>
+          <TouchableOpacity style={styles.scanBtn} onPress={startScan}>
+            <View style={styles.scanBtnInner} />
+          </TouchableOpacity>
+          <Text style={styles.scanHint}>Tap to start 5-second scan</Text>
+        </View>
+      )}
+
+      {/* Correction modal */}
+      <Modal visible={showCorrection} animationType="slide" presentationStyle="pageSheet">
+        <View style={styles.modalContainer}>
+          <Text style={styles.modalTitle}>What drink is this?</Text>
+          <Text style={styles.modalSub}>
+            Your correction helps improve future scans
+          </Text>
+          <ScrollView style={styles.drinkList}>
+            {getAllDrinkIds().filter(id => id !== 'unknown').map(drinkId => {
+              const info = getDrinkInfo(drinkId)
+              return (
+                <TouchableOpacity
+                  key={drinkId}
+                  style={[
+                    styles.drinkOption,
+                    result?.identification.drinkId === drinkId && styles.drinkOptionSelected
+                  ]}
+                  onPress={() => handleCorrect(drinkId)}
+                >
+                  <Text style={styles.drinkOptionText}>{info.name}</Text>
+                  <Text style={styles.drinkOptionCal}>{info.caloriesPer100ml} cal/100ml</Text>
+                </TouchableOpacity>
+              )
+            })}
+          </ScrollView>
+          <TouchableOpacity
+            style={styles.modalCancel}
+            onPress={() => setShowCorrection(false)}
+          >
+            <Text style={styles.modalCancelText}>Cancel</Text>
+          </TouchableOpacity>
+        </View>
+      </Modal>
+    </View>
+  )
+}
+
+function Stat({ label, value, color = '#1a1a1a' }: {
+  label: string; value: string; color?: string
+}) {
+  return (
+    <View style={styles.stat}>
+      <Text style={[styles.statValue, { color }]}>{value}</Text>
+      <Text style={styles.statLabel}>{label}</Text>
     </View>
   )
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#000' },
-  camera: { flex: 1 },
-  centerContainer: {
-    flex: 1, alignItems: 'center', justifyContent: 'center',
-    padding: 32, backgroundColor: '#f5f5f5',
-  },
-  emoji: { fontSize: 64, marginBottom: 16 },
-  title: { fontSize: 24, fontWeight: '700', color: '#1a1a1a', marginBottom: 8, textAlign: 'center' },
-  subtitle: { fontSize: 16, color: '#666', marginBottom: 32, textAlign: 'center', lineHeight: 24 },
-  button: {
-    backgroundColor: '#007AFF', paddingVertical: 14, paddingHorizontal: 40, borderRadius: 12,
-  },
-  buttonText: { color: '#fff', fontSize: 17, fontWeight: '600' },
-  overlay: {
-    ...StyleSheet.absoluteFillObject,
-    alignItems: 'center', justifyContent: 'space-between',
-    paddingTop: 60, paddingBottom: 48,
-  },
-  frameGuide: {
-    width: 260, height: 320, position: 'relative',
-    alignItems: 'center', justifyContent: 'center',
-  },
-  corner: {
-    position: 'absolute', width: 30, height: 30,
-    borderColor: '#fff', borderWidth: 3,
-  },
-  topLeft: { top: 0, left: 0, borderRightWidth: 0, borderBottomWidth: 0 },
-  topRight: { top: 0, right: 0, borderLeftWidth: 0, borderBottomWidth: 0 },
-  bottomLeft: { bottom: 0, left: 0, borderRightWidth: 0, borderTopWidth: 0 },
-  bottomRight: { bottom: 0, right: 0, borderLeftWidth: 0, borderTopWidth: 0 },
-  countdown: {
-    fontSize: 64, fontWeight: '800', color: '#fff',
-    textShadowColor: 'rgba(0,0,0,0.5)', textShadowOffset: { width: 0, height: 2 }, textShadowRadius: 4,
-  },
-  instructionBox: {
-    backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 12,
-    paddingHorizontal: 20, paddingVertical: 10, marginHorizontal: 32,
-  },
-  instruction: { color: '#fff', fontSize: 15, textAlign: 'center' },
-  analyzingBox: { alignItems: 'center', gap: 12 },
-  analyzingText: { color: '#fff', fontSize: 15 },
-  resultCard: {
-    backgroundColor: '#fff', borderRadius: 20,
-    padding: 24, marginHorizontal: 16, width: '90%', alignItems: 'center',
-    shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 12, elevation: 8,
-  },
-  resultDrink: { fontSize: 22, fontWeight: '700', color: '#1a1a1a', marginBottom: 4 },
-  confidenceBadge: {
-    backgroundColor: '#E8F5E9', color: '#2E7D32',
-    paddingHorizontal: 12, paddingVertical: 4, borderRadius: 20,
-    fontSize: 13, fontWeight: '600', marginBottom: 16,
-  },
-  statsRow: { flexDirection: 'row', gap: 16, marginBottom: 20 },
-  stat: { alignItems: 'center', minWidth: 60 },
-  statValue: { fontSize: 20, fontWeight: '700', color: '#007AFF' },
-  statLabel: { fontSize: 12, color: '#666', marginTop: 2 },
-  resetButton: {
-    backgroundColor: '#007AFF', paddingVertical: 12, paddingHorizontal: 32, borderRadius: 12,
-  },
-  resetButtonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
-  scanButton: {
-    width: 72, height: 72, borderRadius: 36,
-    borderWidth: 4, borderColor: '#fff',
-    alignItems: 'center', justifyContent: 'center',
-  },
-  scanButtonInner: {
-    width: 56, height: 56, borderRadius: 28, backgroundColor: '#fff',
-  },
+  container:          { flex: 1, backgroundColor: '#000' },
+  centered:           { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32, backgroundColor: '#f5f5f5' },
+  permIcon:           { fontSize: 64, marginBottom: 16 },
+  permTitle:          { fontSize: 22, fontWeight: '700', color: '#1a1a1a', marginBottom: 8, textAlign: 'center' },
+  permSub:            { fontSize: 15, color: '#666', marginBottom: 32, textAlign: 'center', lineHeight: 22 },
+  btn:                { backgroundColor: '#007AFF', paddingVertical: 14, paddingHorizontal: 40, borderRadius: 12 },
+  btnText:            { color: '#fff', fontSize: 17, fontWeight: '600' },
+  darkOverlay:        { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.85)' },
+  frameContainer:     { flex: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: 120 },
+  frame:              { width: 260, height: 340, alignItems: 'center', justifyContent: 'center' },
+  corner:             { position: 'absolute', width: 32, height: 32, borderColor: '#fff', borderWidth: 3 },
+  tl:                 { top: 0, left: 0, borderRightWidth: 0, borderBottomWidth: 0 },
+  tr:                 { top: 0, right: 0, borderLeftWidth: 0, borderBottomWidth: 0 },
+  bl:                 { bottom: 0, left: 0, borderRightWidth: 0, borderTopWidth: 0 },
+  br:                 { bottom: 0, right: 0, borderLeftWidth: 0, borderTopWidth: 0 },
+  countdown:          { fontSize: 72, fontWeight: '800', color: '#fff', textShadowColor: 'rgba(0,0,0,0.5)', textShadowOffset: { width: 0, height: 2 }, textShadowRadius: 4 },
+  frameHint:          { color: '#fff', fontSize: 14, marginTop: 16, backgroundColor: 'rgba(0,0,0,0.5)', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20 },
+  analyzingContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 },
+  analyzingTitle:     { color: '#fff', fontSize: 20, fontWeight: '700', marginTop: 20, marginBottom: 24 },
+  analyzingSteps:     { color: 'rgba(255,255,255,0.8)', fontSize: 15, lineHeight: 28, textAlign: 'center' },
+  resultScroll:       { flex: 1 },
+  resultContent:      { padding: 16, paddingBottom: 40 },
+  resultHeader:       { alignItems: 'center', marginBottom: 16, marginTop: 8 },
+  resultDrink:        { fontSize: 26, fontWeight: '800', color: '#fff', textAlign: 'center', marginBottom: 8 },
+  confidenceBadge:    { paddingHorizontal: 14, paddingVertical: 5, borderRadius: 20, marginBottom: 6 },
+  confidenceText:     { fontSize: 13, fontWeight: '600' },
+  fallbackNote:       { color: '#FFB74D', fontSize: 12, marginTop: 4 },
+  card:               { backgroundColor: 'rgba(255,255,255,0.95)', borderRadius: 16, padding: 16, marginBottom: 12 },
+  cardTitle:          { fontSize: 15, fontWeight: '700', color: '#333', marginBottom: 12 },
+  statsRow:           { flexDirection: 'row', justifyContent: 'space-around', marginBottom: 8 },
+  stat:               { alignItems: 'center', minWidth: 72 },
+  statValue:          { fontSize: 20, fontWeight: '700' },
+  statLabel:          { fontSize: 11, color: '#888', marginTop: 2 },
+  confirmBtn:         { backgroundColor: '#34C759', borderRadius: 14, padding: 16, alignItems: 'center', marginBottom: 10 },
+  confirmBtnText:     { color: '#fff', fontSize: 17, fontWeight: '700' },
+  correctBtn:         { backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 14, padding: 14, alignItems: 'center', marginBottom: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.3)' },
+  correctBtnText:     { color: '#fff', fontSize: 16, fontWeight: '600' },
+  retryBtn:           { alignItems: 'center', padding: 12 },
+  retryBtnText:       { color: 'rgba(255,255,255,0.7)', fontSize: 15 },
+  scanBtnContainer:   { position: 'absolute', bottom: 48, left: 0, right: 0, alignItems: 'center' },
+  scanBtn:            { width: 80, height: 80, borderRadius: 40, borderWidth: 4, borderColor: '#fff', alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
+  scanBtnInner:       { width: 64, height: 64, borderRadius: 32, backgroundColor: '#fff' },
+  scanHint:           { color: 'rgba(255,255,255,0.8)', fontSize: 13 },
+  modalContainer:     { flex: 1, backgroundColor: '#f5f5f5', padding: 24 },
+  modalTitle:         { fontSize: 22, fontWeight: '700', color: '#1a1a1a', marginBottom: 8 },
+  modalSub:           { fontSize: 14, color: '#666', marginBottom: 20 },
+  drinkList:          { flex: 1 },
+  drinkOption:        { backgroundColor: '#fff', borderRadius: 12, padding: 14, marginBottom: 8, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  drinkOptionSelected:{ borderColor: '#007AFF', borderWidth: 2 },
+  drinkOptionText:    { fontSize: 16, color: '#1a1a1a', fontWeight: '500' },
+  drinkOptionCal:     { fontSize: 13, color: '#888' },
+  modalCancel:        { backgroundColor: '#FF3B30', borderRadius: 14, padding: 16, alignItems: 'center', marginTop: 16 },
+  modalCancelText:    { color: '#fff', fontSize: 17, fontWeight: '600' },
 })
