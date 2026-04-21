@@ -27,10 +27,9 @@ platform :ios do
       keychain_password:    "fastlane_tmp_keychain_password"
     )
 
-    # Critical: pre-authorize codesign to access the key without GUI prompt
-    # Without this, xcodebuild export hangs indefinitely waiting for keychain access
-    sh "security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k 'fastlane_tmp_keychain_password' ~/Library/Keychains/fastlane_tmp_keychain-db"
-    sh "security set-keychain-settings -lut 21600 ~/Library/Keychains/fastlane_tmp_keychain-db"
+    # Pre-authorize codesign to access the private key without GUI prompt
+    sh "security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k fastlane_tmp_keychain_password ~/Library/Keychains/fastlane_tmp_keychain-db || true"
+    sh "security set-keychain-settings -lut 21600 ~/Library/Keychains/fastlane_tmp_keychain-db || true"
 
     install_provisioning_profile(
       path: "DrinkScan_Distribution.mobileprovision"
