@@ -26,11 +26,10 @@ jobs:
         id: node-cache
         with:
           path: node_modules
-          key: node-${{ hashFiles('package.json') }}
-          restore-keys: node-
+          key: node-v2-${{ hashFiles('package.json') }}
+          restore-keys: node-v2-
 
       - name: Install JS dependencies
-        if: steps.node-cache.outputs.cache-hit != 'true'
         run: npm install --legacy-peer-deps
 
       - name: Set up Ruby
