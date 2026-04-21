@@ -4,7 +4,10 @@ import {
   ActivityIndicator, Alert, ScrollView, Modal,
 } from 'react-native'
 import {
-  Camera, useCameraDevice, useCameraPermission,
+  Camera,
+  useCameraDevice,
+  useCameraPermission,
+  CameraRuntimeError,
 } from 'react-native-vision-camera'
 import type { ScanResult, DrinkIdentification } from '../types'
 import { classifyDrink, getTopCandidates } from '../ml/drinkClassifier'
@@ -18,11 +21,10 @@ export default function ScanScreen() {
   const [scanState, setScanState] = useState<ScanState>('idle')
   const [countdown, setCountdown] = useState(5)
   const [result, setResult] = useState<ScanResult | null>(null)
-  const [candidates, setCandidates] = useState<DrinkIdentification[]>([])
   const [showCorrection, setShowCorrection] = useState(false)
 
   const cameraRef = useRef<Camera>(null)
-  const countdownRef = useRef<NodeJS.Timeout | null>(null)
+  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const { hasPermission, requestPermission } = useCameraPermission()
   const device = useCameraDevice('back')
@@ -44,7 +46,7 @@ export default function ScanScreen() {
     setScanState('recording')
     setResult(null)
 
-    // Start countdown
+    // Countdown timer
     let count = 5
     setCountdown(count)
     countdownRef.current = setInterval(() => {
@@ -55,57 +57,59 @@ export default function ScanScreen() {
       }
     }, 1000)
 
-    // Start recording
-    cameraRef.current.startRecording({
-      onRecordingFinished: async (video) => {
-        setScanState('analyzing')
-        try {
-          // Run ML + AR in parallel
-          const [identification, volume, topCandidates] = await Promise.all([
-            classifyDrink(video.path),
-            estimateVolume(video.path),
-            getTopCandidates(video.path, 3),
-          ])
+    try {
+      // Start recording - vision-camera v3 API
+      await cameraRef.current.startRecording({
+        onRecordingFinished: async (video) => {
+          setScanState('analyzing')
+          try {
+            const [identification, volume] = await Promise.all([
+              classifyDrink(video.path),
+              estimateVolume(video.path),
+            ])
 
-          const nutrition = calculateNutrition(
-            identification.drinkId,
-            volume.liquidVolumeMl
-          )
+            const nutrition = calculateNutrition(
+              identification.drinkId,
+              volume.liquidVolumeMl
+            )
 
-          const scanResult: ScanResult = {
-            scanId:          generateScanId(),
-            timestamp:       new Date().toISOString(),
-            identification,
-            volume,
-            nutrition,
-            userConfirmed:   false,
-            syncedToCloud:   false,
+            const scanResult: ScanResult = {
+              scanId:        generateScanId(),
+              timestamp:     new Date().toISOString(),
+              identification,
+              volume,
+              nutrition,
+              userConfirmed: false,
+              syncedToCloud: false,
+            }
+
+            saveScan(scanResult)
+            setResult(scanResult)
+            setScanState('result')
+          } catch (e) {
+            console.error('Analysis error:', e)
+            Alert.alert('Analysis Failed', 'Could not analyze the drink. Please try again.')
+            setScanState('idle')
           }
-
-          saveScan(scanResult)
-          setResult(scanResult)
-          setCandidates(topCandidates)
-          setScanState('result')
-        } catch (e) {
-          console.error('Analysis error:', e)
-          Alert.alert('Scan Failed', 'Could not analyze the drink. Please try again.')
+        },
+        onRecordingError: (error: CameraRuntimeError) => {
+          console.error('Recording error:', error)
           setScanState('idle')
-        }
-      },
-      onRecordingError: (error) => {
-        console.error('Recording error:', error)
-        setScanState('idle')
-      },
-    })
+        },
+      })
 
-    // Stop after 5 seconds
-    setTimeout(async () => {
-      try {
-        await cameraRef.current?.stopRecording()
-      } catch (e) {
-        console.error('Stop error:', e)
-      }
-    }, 5000)
+      // Stop after 5 seconds
+      setTimeout(async () => {
+        try {
+          await cameraRef.current?.stopRecording()
+        } catch (e) {
+          console.error('Stop error:', e)
+        }
+      }, 5000)
+    } catch (e) {
+      console.error('Start error:', e)
+      setScanState('idle')
+    }
   }, [hasPermission, device, requestPermission])
 
   const handleConfirm = useCallback(() => {
@@ -120,8 +124,6 @@ export default function ScanScreen() {
     if (!result) return
     const correctedName = getDrinkName(drinkId)
     updateCorrection(result.scanId, correctedName)
-
-    // Recalculate nutrition with correction
     const nutrition = calculateNutrition(drinkId, result.volume.liquidVolumeMl)
     const drinkInfo = getDrinkInfo(drinkId)
     setResult({
@@ -144,13 +146,14 @@ export default function ScanScreen() {
     setCountdown(5)
   }, [])
 
-  // Permission gate
   if (!hasPermission) {
     return (
       <View style={styles.centered}>
         <Text style={styles.permIcon}>📷</Text>
         <Text style={styles.permTitle}>Camera Access Required</Text>
-        <Text style={styles.permSub}>DrinkScanAI needs camera access to scan your drink</Text>
+        <Text style={styles.permSub}>
+          DrinkScanAI needs camera access to scan your drink
+        </Text>
         <TouchableOpacity style={styles.btn} onPress={requestPermission}>
           <Text style={styles.btnText}>Allow Camera</Text>
         </TouchableOpacity>
@@ -169,7 +172,6 @@ export default function ScanScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Live camera feed */}
       <Camera
         ref={cameraRef}
         style={StyleSheet.absoluteFill}
@@ -179,12 +181,8 @@ export default function ScanScreen() {
         audio={false}
       />
 
-      {/* Dark overlay when analyzing */}
-      {(scanState === 'analyzing') && (
-        <View style={styles.darkOverlay} />
-      )}
+      {scanState === 'analyzing' && <View style={styles.darkOverlay} />}
 
-      {/* Corner frame guide */}
       {(scanState === 'idle' || scanState === 'recording') && (
         <View style={styles.frameContainer}>
           <View style={styles.frame}>
@@ -204,7 +202,6 @@ export default function ScanScreen() {
         </View>
       )}
 
-      {/* Analyzing state */}
       {scanState === 'analyzing' && (
         <View style={styles.analyzingContainer}>
           <ActivityIndicator size="large" color="#fff" />
@@ -217,13 +214,8 @@ export default function ScanScreen() {
         </View>
       )}
 
-      {/* Result card */}
       {scanState === 'result' && result && (
-        <ScrollView
-          style={styles.resultScroll}
-          contentContainerStyle={styles.resultContent}
-        >
-          {/* Header */}
+        <ScrollView style={styles.resultScroll} contentContainerStyle={styles.resultContent}>
           <View style={styles.resultHeader}>
             <Text style={styles.resultDrink}>{result.identification.drinkName}</Text>
             <View style={[
@@ -238,13 +230,10 @@ export default function ScanScreen() {
               </Text>
             </View>
             {result.volume.method === 'fallback' && (
-              <Text style={styles.fallbackNote}>
-                ⚠️ Volume estimated (ARKit unavailable)
-              </Text>
+              <Text style={styles.fallbackNote}>⚠️ Volume estimated (ARKit unavailable)</Text>
             )}
           </View>
 
-          {/* Volume stats */}
           <View style={styles.card}>
             <Text style={styles.cardTitle}>📐 Volume</Text>
             <View style={styles.statsRow}>
@@ -254,7 +243,6 @@ export default function ScanScreen() {
             </View>
           </View>
 
-          {/* Nutrition stats */}
           <View style={styles.card}>
             <Text style={styles.cardTitle}>🧮 Nutrition</Text>
             <View style={styles.statsRow}>
@@ -269,25 +257,18 @@ export default function ScanScreen() {
             </View>
           </View>
 
-          {/* Action buttons */}
           <TouchableOpacity style={styles.confirmBtn} onPress={handleConfirm}>
             <Text style={styles.confirmBtnText}>✅ Confirm & Save</Text>
           </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.correctBtn}
-            onPress={() => setShowCorrection(true)}
-          >
+          <TouchableOpacity style={styles.correctBtn} onPress={() => setShowCorrection(true)}>
             <Text style={styles.correctBtnText}>✏️ Correct Drink Type</Text>
           </TouchableOpacity>
-
           <TouchableOpacity style={styles.retryBtn} onPress={reset}>
             <Text style={styles.retryBtnText}>🔄 Scan Again</Text>
           </TouchableOpacity>
         </ScrollView>
       )}
 
-      {/* Scan button */}
       {scanState === 'idle' && (
         <View style={styles.scanBtnContainer}>
           <TouchableOpacity style={styles.scanBtn} onPress={startScan}>
@@ -297,13 +278,10 @@ export default function ScanScreen() {
         </View>
       )}
 
-      {/* Correction modal */}
       <Modal visible={showCorrection} animationType="slide" presentationStyle="pageSheet">
         <View style={styles.modalContainer}>
           <Text style={styles.modalTitle}>What drink is this?</Text>
-          <Text style={styles.modalSub}>
-            Your correction helps improve future scans
-          </Text>
+          <Text style={styles.modalSub}>Your correction helps improve future scans</Text>
           <ScrollView style={styles.drinkList}>
             {getAllDrinkIds().filter(id => id !== 'unknown').map(drinkId => {
               const info = getDrinkInfo(drinkId)
@@ -322,10 +300,7 @@ export default function ScanScreen() {
               )
             })}
           </ScrollView>
-          <TouchableOpacity
-            style={styles.modalCancel}
-            onPress={() => setShowCorrection(false)}
-          >
+          <TouchableOpacity style={styles.modalCancel} onPress={() => setShowCorrection(false)}>
             <Text style={styles.modalCancelText}>Cancel</Text>
           </TouchableOpacity>
         </View>
@@ -334,9 +309,7 @@ export default function ScanScreen() {
   )
 }
 
-function Stat({ label, value, color = '#1a1a1a' }: {
-  label: string; value: string; color?: string
-}) {
+function Stat({ label, value, color = '#1a1a1a' }: { label: string; value: string; color?: string }) {
   return (
     <View style={styles.stat}>
       <Text style={[styles.statValue, { color }]}>{value}</Text>
