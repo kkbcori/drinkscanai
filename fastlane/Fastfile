@@ -55,7 +55,8 @@ platform :ios do
       skip_package_ipa: true,
       archive_path:     "./build/DrinkScanAI.xcarchive",
       xcargs:           "CODE_SIGN_IDENTITY='' CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO",
-      output_directory: "./build"
+      output_directory: "./build",
+      xcodebuild_formatter: ""
     )
 
     # Step 2: Export with proper signing — codesign pre-authorized via workflow
