@@ -1,471 +1,298 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react'
+import React, { useState, useRef, useCallback } from 'react'
 import {
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
-  Animated,
+  ActivityIndicator,
   Alert,
   Platform,
 } from 'react-native'
-import { ARMeasurement, CupMeasurement } from '../native/ARMeasurement'
-import { lookupNutrition } from '../db/nutritionDB'
+import {
+  Camera,
+  useCameraDevice,
+  useCameraPermission,
+  useVideoRecording,
+} from 'react-native-vision-camera'
 
-// ─── Scan phase states ───────────────────────────────────────────────────────
-type Phase =
-  | 'idle'          // before scan starts
-  | 'scanning'      // AR world map building
-  | 'ready'         // world map ready, waiting for user to tap "measure"
-  | 'measuring'     // user tapping 3 points
-  | 'processing'    // computing result
-  | 'result'        // showing measurement + nutrition
+type ScanResult = {
+  drink: string
+  volume: number
+  fillLevel: number
+  calories: number
+  caffeine: number
+  confidence: number
+}
 
-// ─── ScanScreen ─────────────────────────────────────────────────────────────
+type ScanState = 'idle' | 'permission' | 'scanning' | 'analyzing' | 'result'
+
 export default function ScanScreen() {
-  const [phase, setPhase] = useState<Phase>('idle')
-  const [scanProgress, setScanProgress] = useState(0)
-  const [measurement, setMeasurement] = useState<CupMeasurement | null>(null)
-  const [nutrition, setNutrition] = useState<any | null>(null)
-  const [fillPercent, setFillPercent] = useState(80) // user adjustable
+  const [scanState, setScanState] = useState<ScanState>('idle')
+  const [result, setResult] = useState<ScanResult | null>(null)
+  const [countdown, setCountdown] = useState(0)
 
-  const progressAnim = useRef(new Animated.Value(0)).current
-  const resultAnim = useRef(new Animated.Value(0)).current
+  const device = useCameraDevice('back')
+  const { hasPermission, requestPermission } = useCameraPermission()
+  const cameraRef = useRef<Camera>(null)
 
-  // Subscribe to AR events
-  useEffect(() => {
-    const unsub = ARMeasurement.subscribe({
-      onProgress: (p) => {
-        setScanProgress(p)
-        Animated.timing(progressAnim, {
-          toValue: p,
-          duration: 200,
-          useNativeDriver: false,
-        }).start()
-      },
-      onReady: () => {
-        setPhase('ready')
-      },
-      onMeasurement: (result) => {
-        setMeasurement(result)
-        setPhase('processing')
-        // Look up nutrition from local DB
-        lookupNutrition('coffee_latte').then((n) => { // TODO: pass detected drink type
-          setNutrition(n)
-          setPhase('result')
-          Animated.spring(resultAnim, {
-            toValue: 1,
-            useNativeDriver: true,
-          }).start()
-        })
-      },
-      onError: (msg) => {
-        Alert.alert('Scan Error', msg, [{ text: 'OK', onPress: () => setPhase('idle') }])
-        ARMeasurement.dismiss()
-      },
-    })
-    return unsub
-  }, [])
+  const handleRequestPermission = useCallback(async () => {
+    setScanState('permission')
+    const granted = await requestPermission()
+    setScanState(granted ? 'idle' : 'idle')
+  }, [requestPermission])
 
-  const handleStartScan = useCallback(async () => {
-    if (!ARMeasurement.isSupported()) {
-      Alert.alert('AR Not Available', 'AR scanning requires iOS 11 or later.')
+  const startScan = useCallback(async () => {
+    if (!hasPermission) {
+      await handleRequestPermission()
       return
     }
+    if (!cameraRef.current || !device) return
+
+    setScanState('scanning')
+    setResult(null)
+
+    // 5-second countdown while recording
+    let count = 5
+    setCountdown(count)
+    const timer = setInterval(() => {
+      count -= 1
+      setCountdown(count)
+      if (count === 0) clearInterval(timer)
+    }, 1000)
+
     try {
-      setPhase('scanning')
-      setScanProgress(0)
-      await ARMeasurement.startScan()
-    } catch (e: any) {
-      Alert.alert('Error', e.message)
-      setPhase('idle')
+      // Start video recording
+      cameraRef.current.startRecording({
+        onRecordingFinished: async (video) => {
+          setScanState('analyzing')
+          // TODO: Pass video.path to ARKit for volume estimation
+          // TODO: Pass video frames to ML model for drink identification
+          // For now simulate analysis with realistic delay
+          await new Promise(r => setTimeout(r, 2000))
+
+          // Placeholder result — real ML + AR results will replace this
+          setResult({
+            drink: 'Coffee (Black)',
+            volume: 354,
+            fillLevel: 82,
+            calories: 5,
+            caffeine: 95,
+            confidence: 0.91,
+          })
+          setScanState('result')
+        },
+        onRecordingError: (error) => {
+          console.error('Recording error:', error)
+          setScanState('idle')
+        },
+      })
+
+      // Stop recording after 5 seconds
+      setTimeout(async () => {
+        try {
+          await cameraRef.current?.stopRecording()
+        } catch (e) {
+          console.error('Stop recording error:', e)
+        }
+      }, 5000)
+    } catch (e) {
+      console.error('Start recording error:', e)
+      setScanState('idle')
     }
+  }, [hasPermission, device, handleRequestPermission])
+
+  const reset = useCallback(() => {
+    setResult(null)
+    setScanState('idle')
+    setCountdown(0)
   }, [])
 
-  const handleBeginMeasuring = useCallback(async () => {
-    try {
-      setPhase('measuring')
-      await ARMeasurement.beginMeasuring()
-    } catch (e: any) {
-      Alert.alert('Error', e.message)
-    }
-  }, [])
+  // No camera permission yet
+  if (!hasPermission) {
+    return (
+      <View style={styles.centerContainer}>
+        <Text style={styles.emoji}>📷</Text>
+        <Text style={styles.title}>Camera Access Needed</Text>
+        <Text style={styles.subtitle}>
+          DrinkScanAI needs camera access to scan your drink
+        </Text>
+        <TouchableOpacity style={styles.button} onPress={handleRequestPermission}>
+          <Text style={styles.buttonText}>Allow Camera</Text>
+        </TouchableOpacity>
+      </View>
+    )
+  }
 
-  const handleReset = useCallback(() => {
-    ARMeasurement.dismiss()
-    setPhase('idle')
-    setMeasurement(null)
-    setNutrition(null)
-    setScanProgress(0)
-    resultAnim.setValue(0)
-  }, [])
+  // No back camera found
+  if (!device) {
+    return (
+      <View style={styles.centerContainer}>
+        <Text style={styles.emoji}>⚠️</Text>
+        <Text style={styles.title}>Camera Not Found</Text>
+        <Text style={styles.subtitle}>Could not access the rear camera</Text>
+      </View>
+    )
+  }
 
-  // ─── Computed nutrition values
-  const effectiveVolume = measurement
-    ? Math.round(measurement.volume_ml * (fillPercent / 100))
-    : 0
-
-  const calories = nutrition
-    ? Math.round((nutrition.calories_per_100ml / 100) * effectiveVolume)
-    : 0
-  const caffeine = nutrition
-    ? Math.round((nutrition.caffeine_mg_per_100ml / 100) * effectiveVolume)
-    : 0
-  const carbs = nutrition
-    ? Math.round((nutrition.carbs_g_per_100ml / 100) * effectiveVolume * 10) / 10
-    : 0
-
-  // ─── Render ──────────────────────────────────────────────────────────────
   return (
     <View style={styles.container}>
+      {/* Camera Preview */}
+      <Camera
+        ref={cameraRef}
+        style={styles.camera}
+        device={device}
+        isActive={scanState !== 'analyzing'}
+        video={true}
+        audio={false}
+      />
 
-      {/* ── Idle state ── */}
-      {phase === 'idle' && (
-        <View style={styles.center}>
-          <Text style={styles.title}>Scan your drink</Text>
-          <Text style={styles.subtitle}>
-            Hold your phone ~30cm from the cup and slowly move{'\n'}
-            around it in a half-circle arc
-          </Text>
-          <TouchableOpacity style={styles.primaryBtn} onPress={handleStartScan}>
-            <Text style={styles.primaryBtnText}>Start AR Scan</Text>
-          </TouchableOpacity>
+      {/* Overlay */}
+      <View style={styles.overlay}>
+        {/* Scanning frame guide */}
+        <View style={styles.frameGuide}>
+          <View style={[styles.corner, styles.topLeft]} />
+          <View style={[styles.corner, styles.topRight]} />
+          <View style={[styles.corner, styles.bottomLeft]} />
+          <View style={[styles.corner, styles.bottomRight]} />
+          {scanState === 'scanning' && countdown > 0 && (
+            <Text style={styles.countdown}>{countdown}</Text>
+          )}
         </View>
-      )}
 
-      {/* ── Scanning progress (shown as overlay while AR view is open) ── */}
-      {(phase === 'scanning' || phase === 'ready') && (
-        <View style={styles.progressOverlay}>
-          <View style={styles.progressCard}>
-            <Text style={styles.progressTitle}>
-              {phase === 'ready' ? 'World map ready!' : 'Building scan...'}
+        {/* Instruction */}
+        <View style={styles.instructionBox}>
+          {scanState === 'idle' && (
+            <Text style={styles.instruction}>
+              Point camera at your drink cup and tap Scan
             </Text>
+          )}
+          {scanState === 'scanning' && (
+            <Text style={styles.instruction}>
+              Hold steady — scanning for {countdown}s...
+            </Text>
+          )}
+          {scanState === 'analyzing' && (
+            <Text style={styles.instruction}>Analyzing your drink...</Text>
+          )}
+        </View>
 
-            {/* Progress bar */}
-            <View style={styles.progressTrack}>
-              <Animated.View
-                style={[
-                  styles.progressFill,
-                  {
-                    width: progressAnim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: ['0%', '100%'],
-                    }),
-                  },
-                ]}
-              />
-            </View>
-            <Text style={styles.progressPct}>{Math.round(scanProgress * 100)}%</Text>
-
-            {phase === 'ready' && (
-              <TouchableOpacity
-                style={styles.measureBtn}
-                onPress={handleBeginMeasuring}>
-                <Text style={styles.measureBtnText}>Tap to Measure Cup →</Text>
-              </TouchableOpacity>
-            )}
+        {/* Analyzing spinner */}
+        {scanState === 'analyzing' && (
+          <View style={styles.analyzingBox}>
+            <ActivityIndicator size="large" color="#fff" />
+            <Text style={styles.analyzingText}>Measuring cup & identifying drink</Text>
           </View>
-        </View>
-      )}
+        )}
 
-      {/* ── Measuring hint ── */}
-      {phase === 'measuring' && (
-        <View style={styles.progressOverlay}>
-          <View style={styles.progressCard}>
-            <Text style={styles.progressTitle}>Follow the on-screen instructions</Text>
-            <Text style={styles.subtitle}>Tap the 3 points shown on the AR view</Text>
-          </View>
-        </View>
-      )}
-
-      {/* ── Processing ── */}
-      {phase === 'processing' && (
-        <View style={styles.center}>
-          <Text style={styles.title}>Calculating...</Text>
-        </View>
-      )}
-
-      {/* ── Result card ── */}
-      {phase === 'result' && measurement && (
-        <Animated.View
-          style={[
-            styles.resultContainer,
-            { opacity: resultAnim, transform: [{ scale: resultAnim }] },
-          ]}>
-
-          {/* Volume measurement */}
+        {/* Result card */}
+        {scanState === 'result' && result && (
           <View style={styles.resultCard}>
-            <Text style={styles.resultSectionTitle}>Cup measured</Text>
-            <View style={styles.measureGrid}>
-              <MeasureCell label="Height" value={`${measurement.height_mm} mm`} />
-              <MeasureCell label="Diameter" value={`${measurement.diameter_mm} mm`} />
-              <MeasureCell label="Full capacity" value={`${measurement.volume_ml} ml`} />
-              <MeasureCell
-                label="Confidence"
-                value={measurement.confidence}
-                accent={measurement.confidence === 'high' ? '#1D9E75' : '#BA7517'}
-              />
-            </View>
-
-            {/* Fill level slider */}
-            <Text style={styles.fillLabel}>How full is it?</Text>
-            <View style={styles.fillRow}>
-              {[25, 50, 75, 100].map(pct => (
-                <TouchableOpacity
-                  key={pct}
-                  style={[styles.fillChip, fillPercent === pct && styles.fillChipActive]}
-                  onPress={() => setFillPercent(pct)}>
-                  <Text style={[
-                    styles.fillChipText,
-                    fillPercent === pct && styles.fillChipTextActive
-                  ]}>{pct}%</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-            <Text style={styles.effectiveVol}>
-              Effective volume: <Text style={styles.boldText}>{effectiveVolume} ml</Text>
+            <Text style={styles.resultDrink}>{result.drink}</Text>
+            <Text style={styles.confidenceBadge}>
+              {Math.round(result.confidence * 100)}% confident
             </Text>
-          </View>
-
-          {/* Nutrition */}
-          {nutrition && (
-            <View style={styles.resultCard}>
-              <Text style={styles.resultSectionTitle}>Nutrition</Text>
-              <View style={styles.measureGrid}>
-                <NutrientCell label="Calories" value={`${calories}`} unit="kcal" color="#E85D24" />
-                <NutrientCell label="Caffeine" value={`${caffeine}`} unit="mg" color="#534AB7" />
-                <NutrientCell label="Carbs" value={`${carbs}`} unit="g" color="#BA7517" />
+            <View style={styles.statsRow}>
+              <View style={styles.stat}>
+                <Text style={styles.statValue}>{result.volume}ml</Text>
+                <Text style={styles.statLabel}>Volume</Text>
+              </View>
+              <View style={styles.stat}>
+                <Text style={styles.statValue}>{result.fillLevel}%</Text>
+                <Text style={styles.statLabel}>Fill Level</Text>
+              </View>
+              <View style={styles.stat}>
+                <Text style={styles.statValue}>{result.calories}</Text>
+                <Text style={styles.statLabel}>Calories</Text>
+              </View>
+              <View style={styles.stat}>
+                <Text style={styles.statValue}>{result.caffeine}mg</Text>
+                <Text style={styles.statLabel}>Caffeine</Text>
               </View>
             </View>
-          )}
+            <TouchableOpacity style={styles.resetButton} onPress={reset}>
+              <Text style={styles.resetButtonText}>Scan Again</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
-          <TouchableOpacity style={styles.resetBtn} onPress={handleReset}>
-            <Text style={styles.resetBtnText}>Scan another drink</Text>
+        {/* Scan button */}
+        {(scanState === 'idle') && (
+          <TouchableOpacity style={styles.scanButton} onPress={startScan}>
+            <View style={styles.scanButtonInner} />
           </TouchableOpacity>
-        </Animated.View>
-      )}
+        )}
+      </View>
     </View>
   )
 }
 
-// ─── Sub-components ──────────────────────────────────────────────────────────
-
-function MeasureCell({
-  label, value, accent
-}: { label: string; value: string; accent?: string }) {
-  return (
-    <View style={styles.measureCell}>
-      <Text style={styles.measureCellLabel}>{label}</Text>
-      <Text style={[styles.measureCellValue, accent ? { color: accent } : {}]}>{value}</Text>
-    </View>
-  )
-}
-
-function NutrientCell({
-  label, value, unit, color
-}: { label: string; value: string; unit: string; color: string }) {
-  return (
-    <View style={styles.nutrientCell}>
-      <Text style={styles.measureCellLabel}>{label}</Text>
-      <Text style={[styles.nutrientValue, { color }]}>{value}</Text>
-      <Text style={styles.nutrientUnit}>{unit}</Text>
-    </View>
-  )
-}
-
-// ─── Styles ──────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f5f5f0',
+  container: { flex: 1, backgroundColor: '#000' },
+  camera: { flex: 1 },
+  centerContainer: {
+    flex: 1, alignItems: 'center', justifyContent: 'center',
+    padding: 32, backgroundColor: '#f5f5f5',
   },
-  center: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 32,
+  emoji: { fontSize: 64, marginBottom: 16 },
+  title: { fontSize: 24, fontWeight: '700', color: '#1a1a1a', marginBottom: 8, textAlign: 'center' },
+  subtitle: { fontSize: 16, color: '#666', marginBottom: 32, textAlign: 'center', lineHeight: 24 },
+  button: {
+    backgroundColor: '#007AFF', paddingVertical: 14, paddingHorizontal: 40, borderRadius: 12,
   },
-  title: {
-    fontSize: 22,
-    fontWeight: '500',
-    color: '#1a1a1a',
-    marginBottom: 8,
-    textAlign: 'center',
+  buttonText: { color: '#fff', fontSize: 17, fontWeight: '600' },
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center', justifyContent: 'space-between',
+    paddingTop: 60, paddingBottom: 48,
   },
-  subtitle: {
-    fontSize: 14,
-    color: '#666',
-    textAlign: 'center',
-    lineHeight: 22,
-    marginBottom: 32,
+  frameGuide: {
+    width: 260, height: 320, position: 'relative',
+    alignItems: 'center', justifyContent: 'center',
   },
-  primaryBtn: {
-    backgroundColor: '#185FA5',
-    borderRadius: 24,
-    paddingHorizontal: 32,
-    paddingVertical: 14,
+  corner: {
+    position: 'absolute', width: 30, height: 30,
+    borderColor: '#fff', borderWidth: 3,
   },
-  primaryBtnText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
+  topLeft: { top: 0, left: 0, borderRightWidth: 0, borderBottomWidth: 0 },
+  topRight: { top: 0, right: 0, borderLeftWidth: 0, borderBottomWidth: 0 },
+  bottomLeft: { bottom: 0, left: 0, borderRightWidth: 0, borderTopWidth: 0 },
+  bottomRight: { bottom: 0, right: 0, borderLeftWidth: 0, borderTopWidth: 0 },
+  countdown: {
+    fontSize: 64, fontWeight: '800', color: '#fff',
+    textShadowColor: 'rgba(0,0,0,0.5)', textShadowOffset: { width: 0, height: 2 }, textShadowRadius: 4,
   },
-  progressOverlay: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    paddingBottom: 48,
+  instructionBox: {
+    backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 12,
+    paddingHorizontal: 20, paddingVertical: 10, marginHorizontal: 32,
   },
-  progressCard: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 20,
-    width: '85%',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 4,
-  },
-  progressTitle: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#1a1a1a',
-    marginBottom: 12,
-  },
-  progressTrack: {
-    width: '100%',
-    height: 8,
-    backgroundColor: '#e8e8e0',
-    borderRadius: 4,
-    overflow: 'hidden',
-    marginBottom: 6,
-  },
-  progressFill: {
-    height: 8,
-    backgroundColor: '#1D9E75',
-    borderRadius: 4,
-  },
-  progressPct: {
-    fontSize: 13,
-    color: '#888',
-    marginBottom: 16,
-  },
-  measureBtn: {
-    backgroundColor: '#1D9E75',
-    borderRadius: 20,
-    paddingHorizontal: 24,
-    paddingVertical: 10,
-  },
-  measureBtnText: {
-    color: '#fff',
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  resultContainer: {
-    flex: 1,
-    padding: 16,
-  },
+  instruction: { color: '#fff', fontSize: 15, textAlign: 'center' },
+  analyzingBox: { alignItems: 'center', gap: 12 },
+  analyzingText: { color: '#fff', fontSize: 15 },
   resultCard: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 12,
-    borderWidth: 0.5,
-    borderColor: 'rgba(0,0,0,0.08)',
+    backgroundColor: '#fff', borderRadius: 20,
+    padding: 24, marginHorizontal: 16, width: '90%', alignItems: 'center',
+    shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 12, elevation: 8,
   },
-  resultSectionTitle: {
-    fontSize: 13,
-    color: '#888',
-    marginBottom: 12,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
+  resultDrink: { fontSize: 22, fontWeight: '700', color: '#1a1a1a', marginBottom: 4 },
+  confidenceBadge: {
+    backgroundColor: '#E8F5E9', color: '#2E7D32',
+    paddingHorizontal: 12, paddingVertical: 4, borderRadius: 20,
+    fontSize: 13, fontWeight: '600', marginBottom: 16,
   },
-  measureGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-    marginBottom: 12,
+  statsRow: { flexDirection: 'row', gap: 16, marginBottom: 20 },
+  stat: { alignItems: 'center', minWidth: 60 },
+  statValue: { fontSize: 20, fontWeight: '700', color: '#007AFF' },
+  statLabel: { fontSize: 12, color: '#666', marginTop: 2 },
+  resetButton: {
+    backgroundColor: '#007AFF', paddingVertical: 12, paddingHorizontal: 32, borderRadius: 12,
   },
-  measureCell: {
-    backgroundColor: '#f5f5f0',
-    borderRadius: 10,
-    padding: 10,
-    minWidth: '45%',
-    flex: 1,
+  resetButtonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  scanButton: {
+    width: 72, height: 72, borderRadius: 36,
+    borderWidth: 4, borderColor: '#fff',
+    alignItems: 'center', justifyContent: 'center',
   },
-  measureCellLabel: {
-    fontSize: 11,
-    color: '#888',
-    marginBottom: 3,
-  },
-  measureCellValue: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#1a1a1a',
-  },
-  fillLabel: {
-    fontSize: 13,
-    color: '#888',
-    marginBottom: 8,
-  },
-  fillRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 8,
-  },
-  fillChip: {
-    flex: 1,
-    paddingVertical: 8,
-    borderRadius: 8,
-    backgroundColor: '#f5f5f0',
-    alignItems: 'center',
-    borderWidth: 0.5,
-    borderColor: 'transparent',
-  },
-  fillChipActive: {
-    backgroundColor: '#E6F1FB',
-    borderColor: '#185FA5',
-  },
-  fillChipText: {
-    fontSize: 14,
-    color: '#666',
-  },
-  fillChipTextActive: {
-    color: '#185FA5',
-    fontWeight: '500',
-  },
-  effectiveVol: {
-    fontSize: 13,
-    color: '#888',
-  },
-  boldText: {
-    fontWeight: '600',
-    color: '#1a1a1a',
-  },
-  nutrientCell: {
-    backgroundColor: '#f5f5f0',
-    borderRadius: 10,
-    padding: 10,
-    flex: 1,
-    alignItems: 'center',
-  },
-  nutrientValue: {
-    fontSize: 22,
-    fontWeight: '600',
-  },
-  nutrientUnit: {
-    fontSize: 11,
-    color: '#888',
-  },
-  resetBtn: {
-    borderRadius: 20,
-    paddingVertical: 12,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.12)',
-  },
-  resetBtnText: {
-    fontSize: 15,
-    color: '#666',
+  scanButtonInner: {
+    width: 56, height: 56, borderRadius: 28, backgroundColor: '#fff',
   },
 })
