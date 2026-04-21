@@ -9,7 +9,7 @@ on:
 jobs:
   build-and-deploy:
     name: Build iOS & Upload to TestFlight
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 120
 
     steps:
@@ -44,11 +44,71 @@ jobs:
         id: pods-cache
         with:
           path: ios/Pods
-          key: pods-v2-${{ hashFiles('ios/Podfile') }}
+          key: pods-xc16-${{ hashFiles('ios/Podfile') }}
 
       - name: Install CocoaPods
         if: steps.pods-cache.outputs.cache-hit != 'true'
         run: cd ios && bundle exec pod install && cd ..
+
+      - name: Generate app icons
+        run: |
+          # Create a simple blue placeholder icon using sips (built-in macOS tool)
+          mkdir -p ios/DrinkScanAI/Images.xcassets/AppIcon.appiconset
+
+          # Create a 1024x1024 base icon (solid blue with text)
+          python3 -c "
+          import struct, zlib
+
+          def make_png(size, r, g, b):
+              def chunk(name, data):
+                  c = zlib.crc32(name + data) & 0xffffffff
+                  return struct.pack('>I', len(data)) + name + data + struct.pack('>I', c)
+              raw = b''
+              for y in range(size):
+                  raw += b'\x00'
+                  for x in range(size):
+                      raw += bytes([r, g, b, 255])
+              compressed = zlib.compress(raw)
+              ihdr = struct.pack('>IIBBBBB', size, size, 8, 2, 0, 0, 0)
+              return b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', ihdr) + chunk(b'IDAT', compressed) + chunk(b'IEND', b'')
+
+          with open('/tmp/icon_1024.png', 'wb') as f:
+              f.write(make_png(1024, 0, 122, 255))
+          print('Base icon created')
+          "
+
+          # Generate all required sizes using sips
+          for size in 20 29 40 58 60 76 80 87 120 152 167 180 1024; do
+            sips -z $size $size /tmp/icon_1024.png --out "ios/DrinkScanAI/Images.xcassets/AppIcon.appiconset/icon_${size}.png" 2>/dev/null
+          done
+
+          # Write Contents.json
+          cat > ios/DrinkScanAI/Images.xcassets/AppIcon.appiconset/Contents.json << 'JSONEOF'
+          {
+            "images": [
+              {"idiom":"iphone","scale":"2x","size":"20x20","filename":"icon_40.png"},
+              {"idiom":"iphone","scale":"3x","size":"20x20","filename":"icon_60.png"},
+              {"idiom":"iphone","scale":"2x","size":"29x29","filename":"icon_58.png"},
+              {"idiom":"iphone","scale":"3x","size":"29x29","filename":"icon_87.png"},
+              {"idiom":"iphone","scale":"2x","size":"40x40","filename":"icon_80.png"},
+              {"idiom":"iphone","scale":"3x","size":"40x40","filename":"icon_120.png"},
+              {"idiom":"iphone","scale":"2x","size":"60x60","filename":"icon_120.png"},
+              {"idiom":"iphone","scale":"3x","size":"60x60","filename":"icon_180.png"},
+              {"idiom":"ipad","scale":"1x","size":"20x20","filename":"icon_20.png"},
+              {"idiom":"ipad","scale":"2x","size":"20x20","filename":"icon_40.png"},
+              {"idiom":"ipad","scale":"1x","size":"29x29","filename":"icon_29.png"},
+              {"idiom":"ipad","scale":"2x","size":"29x29","filename":"icon_58.png"},
+              {"idiom":"ipad","scale":"1x","size":"40x40","filename":"icon_40.png"},
+              {"idiom":"ipad","scale":"2x","size":"40x40","filename":"icon_80.png"},
+              {"idiom":"ipad","scale":"1x","size":"76x76","filename":"icon_76.png"},
+              {"idiom":"ipad","scale":"2x","size":"76x76","filename":"icon_152.png"},
+              {"idiom":"ipad","scale":"2x","size":"83.5x83.5","filename":"icon_167.png"},
+              {"idiom":"ios-marketing","scale":"1x","size":"1024x1024","filename":"icon_1024.png"}
+            ],
+            "info":{"author":"xcode","version":1}
+          }
+          JSONEOF
+          echo "Icons generated successfully"
 
       # Create keychain with KNOWN password, import cert, pre-authorize codesign
       # This bypasses setup_ci which uses a random password we can never know
