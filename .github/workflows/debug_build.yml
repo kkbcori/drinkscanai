@@ -1,0 +1,98 @@
+name: Debug Build (run once)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  debug:
+    runs-on: macos-14
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        id: node-cache
+        with:
+          path: node_modules
+          key: node-${{ hashFiles('package.json') }}
+
+      - name: Install JS dependencies
+        if: steps.node-cache.outputs.cache-hit != 'true'
+        run: npm install --legacy-peer-deps
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.2"
+          bundler-cache: true
+
+      - name: Cache CocoaPods
+        uses: actions/cache@v4
+        id: pods-cache
+        with:
+          path: ios/Pods
+          key: pods-v2-${{ hashFiles('ios/Podfile') }}
+
+      - name: Install CocoaPods
+        if: steps.pods-cache.outputs.cache-hit != 'true'
+        run: cd ios && bundle exec pod install && cd ..
+
+      - name: Show CODE_SIGNING settings in Pods project
+        run: |
+          echo "=== Checking CODE_SIGNING settings in Pods xcconfig files ==="
+          grep -r "CODE_SIGNING" ios/Pods/*.xcconfig 2>/dev/null | head -30 || echo "No xcconfig files found at root"
+          grep -r "CODE_SIGNING" ios/Pods/Target\ Support\ Files/ 2>/dev/null | head -30 || echo "No Target Support Files found"
+          echo ""
+          echo "=== Checking Pods-DrinkScanAI embed script ==="
+          cat "ios/Pods/Target Support Files/Pods-DrinkScanAI/Pods-DrinkScanAI-frameworks.sh" 2>/dev/null | grep -A5 "codesign" | head -30 || echo "Script not found"
+
+      - name: Decode certificate
+        env:
+          CERTIFICATE_BASE64: ${{ secrets.CERTIFICATE_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.CERTIFICATE_PASSWORD }}
+        run: |
+          echo "$CERTIFICATE_BASE64" | tr -d ' \n\r\t' | base64 --decode > distribution.p12
+          echo "Password length: ${#CERTIFICATE_PASSWORD}"
+          openssl pkcs12 -in distribution.p12 -passin env:CERTIFICATE_PASSWORD -nokeys -noout -legacy 2>&1 && echo "✓ Password OK" || echo "✗ Password WRONG"
+          # Import to keychain
+          security create-keychain -p "test" debug_keychain.keychain
+          security default-keychain -s debug_keychain.keychain
+          security unlock-keychain -p "test" debug_keychain.keychain
+          security import distribution.p12 -k debug_keychain.keychain -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign 2>&1
+          echo "=== Certificates in keychain ==="
+          security find-identity -v -p codesigning debug_keychain.keychain
+
+      - name: Run xcodebuild directly with timeout and verbose output
+        env:
+          CERTIFICATE_PASSWORD: ${{ secrets.CERTIFICATE_PASSWORD }}
+        run: |
+          cd ios && bundle exec pod install && cd ..
+
+          # Patch bundle ID
+          /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier com.drinkscanai" ios/DrinkScanAI/Info.plist 2>/dev/null || true
+
+          echo "=== Starting xcodebuild with 20-minute timeout ==="
+          echo "=== Watch for where it stops ==="
+
+          timeout 1200 xcodebuild \
+            -workspace ios/DrinkScanAI.xcworkspace \
+            -scheme DrinkScanAI \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath ./build/debug.xcarchive \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            archive 2>&1 | grep -E "(error:|warning:|\[DrinkScanAI\]|\[Pods|\*\* ARCHIVE|Running script|Compiling|Linking|PhaseScript|CodeSign)" | while IFS= read -r line; do
+              echo "$(date '+%H:%M:%S') $line"
+            done
+
+          echo "=== xcodebuild exit code: $? ==="
