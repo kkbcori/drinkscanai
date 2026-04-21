@@ -1,12 +1,11 @@
 /**
- * Local Scan History Database
+ * Local Scan History Database using @op-engineering/op-sqlite
  * Schema is Supabase-ready for Phase 2 sync.
  */
 
-import { open } from 'react-native-quick-sqlite'
+import { open } from '@op-engineering/op-sqlite'
 import type { ScanResult, ScanHistoryItem } from '../types'
 
-// Simple UUID generator — no external deps needed
 function generateUUID(): string {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
     const r = Math.random() * 16 | 0
@@ -83,24 +82,28 @@ export function saveScan(result: ScanResult): void {
 
 export function updateCorrection(scanId: string, correction: string): void {
   if (!db) initDB()
-  db?.execute(
-    `UPDATE scans SET user_correction=?, user_confirmed=0 WHERE scan_id=?`,
-    [correction, scanId]
-  )
+  try {
+    db.execute(
+      `UPDATE scans SET user_correction=?, user_confirmed=0 WHERE scan_id=?`,
+      [correction, scanId]
+    )
+  } catch (e) { console.error('Update correction error:', e) }
 }
 
 export function confirmScan(scanId: string): void {
   if (!db) initDB()
-  db?.execute(`UPDATE scans SET user_confirmed=1 WHERE scan_id=?`, [scanId])
+  try {
+    db.execute(`UPDATE scans SET user_confirmed=1 WHERE scan_id=?`, [scanId])
+  } catch (e) { console.error('Confirm scan error:', e) }
 }
 
 export function getRecentScans(limit = 50): ScanHistoryItem[] {
   if (!db) initDB()
   try {
-    const result = db?.execute(
+    const result = db.execute(
       `SELECT * FROM scans ORDER BY created_at DESC LIMIT ?`, [limit]
     )
-    return (result?.rows?._array ?? []).map((row: any) => ({
+    return (result?.rows ?? []).map((row: any) => ({
       id: row.id,
       scanId: row.scan_id,
       timestamp: row.timestamp,
@@ -138,16 +141,15 @@ export function getRecentScans(limit = 50): ScanHistoryItem[] {
 export function getTodayStats() {
   if (!db) initDB()
   try {
-    const result = db?.execute(`
+    const result = db.execute(`
       SELECT
         COUNT(*) as scan_count,
         SUM(calories) as total_calories,
         SUM(caffeine_grams * 1000) as total_caffeine_mg,
         SUM(liquid_volume_ml) as total_volume_ml
-      FROM scans
-      WHERE date(created_at) = date('now')
+      FROM scans WHERE date(created_at) = date('now')
     `)
-    const row = result?.rows?._array?.[0]
+    const row = result?.rows?.[0]
     return {
       scanCount:       row?.scan_count ?? 0,
       totalCalories:   Math.round(row?.total_calories ?? 0),
@@ -159,25 +161,25 @@ export function getTodayStats() {
   }
 }
 
-// Phase 2: returns unsynced scans to upload to Supabase
 export function getUnsyncedScans(): ScanHistoryItem[] {
   if (!db) initDB()
   try {
-    const result = db?.execute(
+    const result = db.execute(
       `SELECT * FROM scans WHERE synced_to_cloud=0 ORDER BY created_at ASC LIMIT 100`
     )
-    return result?.rows?._array ?? []
+    return result?.rows ?? []
   } catch (e) { return [] }
 }
 
-// Phase 2: mark records as synced after Supabase upload
 export function markAsSynced(scanIds: string[]): void {
   if (!db) initDB()
   const placeholders = scanIds.map(() => '?').join(',')
-  db?.execute(
-    `UPDATE scans SET synced_to_cloud=1 WHERE scan_id IN (${placeholders})`,
-    scanIds
-  )
+  try {
+    db.execute(
+      `UPDATE scans SET synced_to_cloud=1 WHERE scan_id IN (${placeholders})`,
+      scanIds
+    )
+  } catch (e) { console.error('Mark synced error:', e) }
 }
 
 export function generateScanId(): string {
