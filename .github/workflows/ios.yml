@@ -9,7 +9,7 @@ on:
 jobs:
   build-and-deploy:
     name: Build iOS & Upload to TestFlight
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 120
 
     steps:
@@ -26,8 +26,8 @@ jobs:
         id: node-cache
         with:
           path: node_modules
-          key: node-rn073-${{ hashFiles('package.json') }}
-          restore-keys: node-rn073-
+          key: node-macos15-${{ hashFiles('package.json') }}
+          restore-keys: node-macos15-
 
       - name: Install JS dependencies
         run: npm install --legacy-peer-deps
@@ -43,7 +43,7 @@ jobs:
         id: pods-cache
         with:
           path: ios/Pods
-          key: pods-ios18-${{ hashFiles('ios/Podfile') }}
+          key: pods-macos15-${{ hashFiles('ios/Podfile') }}
 
       - name: Install CocoaPods
         run: cd ios && bundle exec pod install && cd ..
