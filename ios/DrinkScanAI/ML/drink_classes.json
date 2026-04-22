@@ -1,0 +1,801 @@
+{
+  "model_version": "efficientnet_b0_v1",
+  "num_classes": 56,
+  "input_size": 224,
+  "input_mean": [
+    0.485,
+    0.456,
+    0.406
+  ],
+  "input_std": [
+    0.229,
+    0.224,
+    0.225
+  ],
+  "classes": [
+    {
+      "index": 0,
+      "id": "espresso",
+      "name": "Espresso",
+      "category": "coffee",
+      "nutrition_per_100ml": {
+        "calories": 9,
+        "caffeine_mg": 212,
+        "carbs_g": 1.7,
+        "protein_g": 0.6,
+        "fat_g": 0.2,
+        "sugar_g": 0.0
+      }
+    },
+    {
+      "index": 1,
+      "id": "americano",
+      "name": "Americano",
+      "category": "coffee",
+      "nutrition_per_100ml": {
+        "calories": 3,
+        "caffeine_mg": 35,
+        "carbs_g": 0.5,
+        "protein_g": 0.1,
+        "fat_g": 0.0,
+        "sugar_g": 0.0
+      }
+    },
+    {
+      "index": 2,
+      "id": "coffee_black",
+      "name": "Black Coffee",
+      "category": "coffee",
+      "nutrition_per_100ml": {
+        "calories": 1,
+        "caffeine_mg": 40,
+        "carbs_g": 0.0,
+        "protein_g": 0.1,
+        "fat_g": 0.0,
+        "sugar_g": 0.0
+      }
+    },
+    {
+      "index": 3,
+      "id": "latte",
+      "name": "Latte",
+      "category": "coffee",
+      "nutrition_per_100ml": {
+        "calories": 54,
+        "caffeine_mg": 27,
+        "carbs_g": 5.6,
+        "protein_g": 3.3,
+        "fat_g": 2.1,
+        "sugar_g": 5.4
+      }
+    },
+    {
+      "index": 4,
+      "id": "cappuccino",
+      "name": "Cappuccino",
+      "category": "coffee",
+      "nutrition_per_100ml": {
+        "calories": 40,
+        "caffeine_mg": 27,
+        "carbs_g": 4.0,
+        "protein_g": 2.5,
+        "fat_g": 1.5,
+        "sugar_g": 4.0
+      }
+    },
+    {
+      "index": 5,
+      "id": "flat_white",
+      "name": "Flat White",
+      "category": "coffee",
+      "nutrition_per_100ml": {
+        "calories": 60,
+        "caffeine_mg": 55,
+        "carbs_g": 5.5,
+        "protein_g": 3.5,
+        "fat_g": 2.8,
+        "sugar_g": 5.5
+      }
+    },
+    {
+      "index": 6,
+      "id": "mocha",
+      "name": "Mocha",
+      "category": "coffee",
+      "nutrition_per_100ml": {
+        "calories": 70,
+        "caffeine_mg": 27,
+        "carbs_g": 9.0,
+        "protein_g": 2.5,
+        "fat_g": 2.5,
+        "sugar_g": 8.0
+      }
+    },
+    {
+      "index": 7,
+      "id": "cold_brew",
+      "name": "Cold Brew Coffee",
+      "category": "coffee",
+      "nutrition_per_100ml": {
+        "calories": 5,
+        "caffeine_mg": 83,
+        "carbs_g": 0.0,
+        "protein_g": 0.1,
+        "fat_g": 0.0,
+        "sugar_g": 0.0
+      }
+    },
+    {
+      "index": 8,
+      "id": "iced_coffee",
+      "name": "Iced Coffee",
+      "category": "coffee",
+      "nutrition_per_100ml": {
+        "calories": 25,
+        "caffeine_mg": 30,
+        "carbs_g": 4.5,
+        "protein_g": 0.5,
+        "fat_g": 0.3,
+        "sugar_g": 4.0
+      }
+    },
+    {
+      "index": 9,
+      "id": "macchiato",
+      "name": "Macchiato",
+      "category": "coffee",
+      "nutrition_per_100ml": {
+        "calories": 13,
+        "caffeine_mg": 53,
+        "carbs_g": 1.5,
+        "protein_g": 0.8,
+        "fat_g": 0.5,
+        "sugar_g": 1.5
+      }
+    },
+    {
+      "index": 10,
+      "id": "black_tea",
+      "name": "Black Tea",
+      "category": "tea",
+      "nutrition_per_100ml": {
+        "calories": 1,
+        "caffeine_mg": 20,
+        "carbs_g": 0.2,
+        "protein_g": 0.0,
+        "fat_g": 0.0,
+        "sugar_g": 0.0
+      }
+    },
+    {
+      "index": 11,
+      "id": "green_tea",
+      "name": "Green Tea",
+      "category": "tea",
+      "nutrition_per_100ml": {
+        "calories": 1,
+        "caffeine_mg": 12,
+        "carbs_g": 0.2,
+        "protein_g": 0.0,
+        "fat_g": 0.0,
+        "sugar_g": 0.0
+      }
+    },
+    {
+      "index": 12,
+      "id": "matcha_latte",
+      "name": "Matcha Latte",
+      "category": "tea",
+      "nutrition_per_100ml": {
+        "calories": 50,
+        "caffeine_mg": 35,
+        "carbs_g": 6.0,
+        "protein_g": 2.0,
+        "fat_g": 1.5,
+        "sugar_g": 5.0
+      }
+    },
+    {
+      "index": 13,
+      "id": "chai_latte",
+      "name": "Chai Latte",
+      "category": "tea",
+      "nutrition_per_100ml": {
+        "calories": 62,
+        "caffeine_mg": 14,
+        "carbs_g": 10.0,
+        "protein_g": 2.2,
+        "fat_g": 1.5,
+        "sugar_g": 9.0
+      }
+    },
+    {
+      "index": 14,
+      "id": "herbal_tea",
+      "name": "Herbal Tea",
+      "category": "tea",
+      "nutrition_per_100ml": {
+        "calories": 1,
+        "caffeine_mg": 0,
+        "carbs_g": 0.2,
+        "protein_g": 0.0,
+        "fat_g": 0.0,
+        "sugar_g": 0.0
+      }
+    },
+    {
+      "index": 15,
+      "id": "iced_tea",
+      "name": "Iced Tea",
+      "category": "tea",
+      "nutrition_per_100ml": {
+        "calories": 16,
+        "caffeine_mg": 5,
+        "carbs_g": 4.0,
+        "protein_g": 0.0,
+        "fat_g": 0.0,
+        "sugar_g": 4.0
+      }
+    },
+    {
+      "index": 16,
+      "id": "bubble_tea",
+      "name": "Bubble Tea",
+      "category": "tea",
+      "nutrition_per_100ml": {
+        "calories": 80,
+        "caffeine_mg": 15,
+        "carbs_g": 18.0,
+        "protein_g": 1.0,
+        "fat_g": 1.2,
+        "sugar_g": 15.0
+      }
+    },
+    {
+      "index": 17,
+      "id": "orange_juice",
+      "name": "Orange Juice",
+      "category": "juice",
+      "nutrition_per_100ml": {
+        "calories": 45,
+        "caffeine_mg": 0,
+        "carbs_g": 10.4,
+        "protein_g": 0.7,
+        "fat_g": 0.2,
+        "sugar_g": 8.4
+      }
+    },
+    {
+      "index": 18,
+      "id": "apple_juice",
+      "name": "Apple Juice",
+      "category": "juice",
+      "nutrition_per_100ml": {
+        "calories": 46,
+        "caffeine_mg": 0,
+        "carbs_g": 11.3,
+        "protein_g": 0.1,
+        "fat_g": 0.1,
+        "sugar_g": 9.6
+      }
+    },
+    {
+      "index": 19,
+      "id": "grape_juice",
+      "name": "Grape Juice",
+      "category": "juice",
+      "nutrition_per_100ml": {
+        "calories": 60,
+        "caffeine_mg": 0,
+        "carbs_g": 14.9,
+        "protein_g": 0.4,
+        "fat_g": 0.1,
+        "sugar_g": 14.2
+      }
+    },
+    {
+      "index": 20,
+      "id": "pineapple_juice",
+      "name": "Pineapple Juice",
+      "category": "juice",
+      "nutrition_per_100ml": {
+        "calories": 50,
+        "caffeine_mg": 0,
+        "carbs_g": 12.5,
+        "protein_g": 0.3,
+        "fat_g": 0.1,
+        "sugar_g": 9.9
+      }
+    },
+    {
+      "index": 21,
+      "id": "mango_juice",
+      "name": "Mango Juice",
+      "category": "juice",
+      "nutrition_per_100ml": {
+        "calories": 60,
+        "caffeine_mg": 0,
+        "carbs_g": 14.0,
+        "protein_g": 0.4,
+        "fat_g": 0.1,
+        "sugar_g": 13.0
+      }
+    },
+    {
+      "index": 22,
+      "id": "cranberry_juice",
+      "name": "Cranberry Juice",
+      "category": "juice",
+      "nutrition_per_100ml": {
+        "calories": 46,
+        "caffeine_mg": 0,
+        "carbs_g": 12.2,
+        "protein_g": 0.0,
+        "fat_g": 0.1,
+        "sugar_g": 12.1
+      }
+    },
+    {
+      "index": 23,
+      "id": "tomato_juice",
+      "name": "Tomato Juice",
+      "category": "juice",
+      "nutrition_per_100ml": {
+        "calories": 17,
+        "caffeine_mg": 0,
+        "carbs_g": 4.2,
+        "protein_g": 0.9,
+        "fat_g": 0.1,
+        "sugar_g": 3.2
+      }
+    },
+    {
+      "index": 24,
+      "id": "lemonade",
+      "name": "Lemonade",
+      "category": "juice",
+      "nutrition_per_100ml": {
+        "calories": 40,
+        "caffeine_mg": 0,
+        "carbs_g": 10.0,
+        "protein_g": 0.1,
+        "fat_g": 0.1,
+        "sugar_g": 9.7
+      }
+    },
+    {
+      "index": 25,
+      "id": "whole_milk",
+      "name": "Whole Milk",
+      "category": "milk",
+      "nutrition_per_100ml": {
+        "calories": 61,
+        "caffeine_mg": 0,
+        "carbs_g": 4.8,
+        "protein_g": 3.2,
+        "fat_g": 3.3,
+        "sugar_g": 4.8
+      }
+    },
+    {
+      "index": 26,
+      "id": "skim_milk",
+      "name": "Skim Milk",
+      "category": "milk",
+      "nutrition_per_100ml": {
+        "calories": 34,
+        "caffeine_mg": 0,
+        "carbs_g": 5.0,
+        "protein_g": 3.4,
+        "fat_g": 0.1,
+        "sugar_g": 5.0
+      }
+    },
+    {
+      "index": 27,
+      "id": "oat_milk",
+      "name": "Oat Milk",
+      "category": "milk",
+      "nutrition_per_100ml": {
+        "calories": 47,
+        "caffeine_mg": 0,
+        "carbs_g": 6.7,
+        "protein_g": 1.0,
+        "fat_g": 1.5,
+        "sugar_g": 4.0
+      }
+    },
+    {
+      "index": 28,
+      "id": "almond_milk",
+      "name": "Almond Milk",
+      "category": "milk",
+      "nutrition_per_100ml": {
+        "calories": 17,
+        "caffeine_mg": 0,
+        "carbs_g": 1.5,
+        "protein_g": 0.6,
+        "fat_g": 1.1,
+        "sugar_g": 1.0
+      }
+    },
+    {
+      "index": 29,
+      "id": "soy_milk",
+      "name": "Soy Milk",
+      "category": "milk",
+      "nutrition_per_100ml": {
+        "calories": 54,
+        "caffeine_mg": 0,
+        "carbs_g": 6.3,
+        "protein_g": 3.3,
+        "fat_g": 1.8,
+        "sugar_g": 4.3
+      }
+    },
+    {
+      "index": 30,
+      "id": "coconut_milk",
+      "name": "Coconut Milk Drink",
+      "category": "milk",
+      "nutrition_per_100ml": {
+        "calories": 20,
+        "caffeine_mg": 0,
+        "carbs_g": 2.0,
+        "protein_g": 0.2,
+        "fat_g": 1.0,
+        "sugar_g": 2.0
+      }
+    },
+    {
+      "index": 31,
+      "id": "chocolate_milk",
+      "name": "Chocolate Milk",
+      "category": "milk",
+      "nutrition_per_100ml": {
+        "calories": 83,
+        "caffeine_mg": 2,
+        "carbs_g": 12.0,
+        "protein_g": 3.2,
+        "fat_g": 3.4,
+        "sugar_g": 11.5
+      }
+    },
+    {
+      "index": 32,
+      "id": "cola",
+      "name": "Cola",
+      "category": "soda",
+      "nutrition_per_100ml": {
+        "calories": 42,
+        "caffeine_mg": 10,
+        "carbs_g": 10.6,
+        "protein_g": 0.0,
+        "fat_g": 0.0,
+        "sugar_g": 10.6
+      }
+    },
+    {
+      "index": 33,
+      "id": "diet_cola",
+      "name": "Diet Cola",
+      "category": "soda",
+      "nutrition_per_100ml": {
+        "calories": 0,
+        "caffeine_mg": 12,
+        "carbs_g": 0.1,
+        "protein_g": 0.0,
+        "fat_g": 0.0,
+        "sugar_g": 0.0
+      }
+    },
+    {
+      "index": 34,
+      "id": "lemon_lime_soda",
+      "name": "Lemon-Lime Soda",
+      "category": "soda",
+      "nutrition_per_100ml": {
+        "calories": 42,
+        "caffeine_mg": 0,
+        "carbs_g": 10.6,
+        "protein_g": 0.0,
+        "fat_g": 0.0,
+        "sugar_g": 10.6
+      }
+    },
+    {
+      "index": 35,
+      "id": "ginger_ale",
+      "name": "Ginger Ale",
+      "category": "soda",
+      "nutrition_per_100ml": {
+        "calories": 34,
+        "caffeine_mg": 0,
+        "carbs_g": 8.7,
+        "protein_g": 0.0,
+        "fat_g": 0.0,
+        "sugar_g": 8.7
+      }
+    },
+    {
+      "index": 36,
+      "id": "orange_soda",
+      "name": "Orange Soda",
+      "category": "soda",
+      "nutrition_per_100ml": {
+        "calories": 48,
+        "caffeine_mg": 0,
+        "carbs_g": 12.0,
+        "protein_g": 0.0,
+        "fat_g": 0.0,
+        "sugar_g": 12.0
+      }
+    },
+    {
+      "index": 37,
+      "id": "root_beer",
+      "name": "Root Beer",
+      "category": "soda",
+      "nutrition_per_100ml": {
+        "calories": 41,
+        "caffeine_mg": 0,
+        "carbs_g": 10.6,
+        "protein_g": 0.0,
+        "fat_g": 0.0,
+        "sugar_g": 10.6
+      }
+    },
+    {
+      "index": 38,
+      "id": "water",
+      "name": "Still Water",
+      "category": "water",
+      "nutrition_per_100ml": {
+        "calories": 0,
+        "caffeine_mg": 0,
+        "carbs_g": 0.0,
+        "protein_g": 0.0,
+        "fat_g": 0.0,
+        "sugar_g": 0.0
+      }
+    },
+    {
+      "index": 39,
+      "id": "sparkling_water",
+      "name": "Sparkling Water",
+      "category": "water",
+      "nutrition_per_100ml": {
+        "calories": 0,
+        "caffeine_mg": 0,
+        "carbs_g": 0.0,
+        "protein_g": 0.0,
+        "fat_g": 0.0,
+        "sugar_g": 0.0
+      }
+    },
+    {
+      "index": 40,
+      "id": "coconut_water",
+      "name": "Coconut Water",
+      "category": "water",
+      "nutrition_per_100ml": {
+        "calories": 19,
+        "caffeine_mg": 0,
+        "carbs_g": 3.7,
+        "protein_g": 0.7,
+        "fat_g": 0.2,
+        "sugar_g": 2.6
+      }
+    },
+    {
+      "index": 41,
+      "id": "flavored_water",
+      "name": "Flavored Water",
+      "category": "water",
+      "nutrition_per_100ml": {
+        "calories": 8,
+        "caffeine_mg": 0,
+        "carbs_g": 2.0,
+        "protein_g": 0.0,
+        "fat_g": 0.0,
+        "sugar_g": 2.0
+      }
+    },
+    {
+      "index": 42,
+      "id": "energy_drink",
+      "name": "Energy Drink",
+      "category": "energy_drink",
+      "nutrition_per_100ml": {
+        "calories": 45,
+        "caffeine_mg": 32,
+        "carbs_g": 11.0,
+        "protein_g": 0.0,
+        "fat_g": 0.0,
+        "sugar_g": 11.0
+      }
+    },
+    {
+      "index": 43,
+      "id": "sports_drink",
+      "name": "Sports Drink",
+      "category": "sports",
+      "nutrition_per_100ml": {
+        "calories": 25,
+        "caffeine_mg": 0,
+        "carbs_g": 6.0,
+        "protein_g": 0.0,
+        "fat_g": 0.0,
+        "sugar_g": 6.0
+      }
+    },
+    {
+      "index": 44,
+      "id": "protein_shake",
+      "name": "Protein Shake",
+      "category": "sports",
+      "nutrition_per_100ml": {
+        "calories": 60,
+        "caffeine_mg": 0,
+        "carbs_g": 5.0,
+        "protein_g": 8.0,
+        "fat_g": 1.5,
+        "sugar_g": 4.0
+      }
+    },
+    {
+      "index": 45,
+      "id": "fruit_smoothie",
+      "name": "Fruit Smoothie",
+      "category": "smoothie",
+      "nutrition_per_100ml": {
+        "calories": 62,
+        "caffeine_mg": 0,
+        "carbs_g": 14.0,
+        "protein_g": 1.0,
+        "fat_g": 0.3,
+        "sugar_g": 12.0
+      }
+    },
+    {
+      "index": 46,
+      "id": "green_smoothie",
+      "name": "Green Smoothie",
+      "category": "smoothie",
+      "nutrition_per_100ml": {
+        "calories": 40,
+        "caffeine_mg": 0,
+        "carbs_g": 8.0,
+        "protein_g": 2.0,
+        "fat_g": 0.5,
+        "sugar_g": 6.0
+      }
+    },
+    {
+      "index": 47,
+      "id": "hot_chocolate",
+      "name": "Hot Chocolate",
+      "category": "hot_drink",
+      "nutrition_per_100ml": {
+        "calories": 67,
+        "caffeine_mg": 5,
+        "carbs_g": 10.0,
+        "protein_g": 2.5,
+        "fat_g": 2.5,
+        "sugar_g": 9.5
+      }
+    },
+    {
+      "index": 48,
+      "id": "milkshake",
+      "name": "Milkshake",
+      "category": "hot_drink",
+      "nutrition_per_100ml": {
+        "calories": 112,
+        "caffeine_mg": 0,
+        "carbs_g": 18.0,
+        "protein_g": 3.4,
+        "fat_g": 3.1,
+        "sugar_g": 17.0
+      }
+    },
+    {
+      "index": 49,
+      "id": "beer",
+      "name": "Beer",
+      "category": "alcohol",
+      "nutrition_per_100ml": {
+        "calories": 43,
+        "caffeine_mg": 0,
+        "carbs_g": 3.6,
+        "protein_g": 0.5,
+        "fat_g": 0.0,
+        "sugar_g": 0.0
+      }
+    },
+    {
+      "index": 50,
+      "id": "wine_red",
+      "name": "Red Wine",
+      "category": "alcohol",
+      "nutrition_per_100ml": {
+        "calories": 85,
+        "caffeine_mg": 0,
+        "carbs_g": 2.6,
+        "protein_g": 0.1,
+        "fat_g": 0.0,
+        "sugar_g": 0.6
+      }
+    },
+    {
+      "index": 51,
+      "id": "wine_white",
+      "name": "White Wine",
+      "category": "alcohol",
+      "nutrition_per_100ml": {
+        "calories": 82,
+        "caffeine_mg": 0,
+        "carbs_g": 2.6,
+        "protein_g": 0.1,
+        "fat_g": 0.0,
+        "sugar_g": 0.6
+      }
+    },
+    {
+      "index": 52,
+      "id": "cocktail",
+      "name": "Cocktail",
+      "category": "alcohol",
+      "nutrition_per_100ml": {
+        "calories": 100,
+        "caffeine_mg": 0,
+        "carbs_g": 10.0,
+        "protein_g": 0.0,
+        "fat_g": 0.0,
+        "sugar_g": 9.5
+      }
+    },
+    {
+      "index": 53,
+      "id": "kombucha",
+      "name": "Kombucha",
+      "category": "fermented",
+      "nutrition_per_100ml": {
+        "calories": 13,
+        "caffeine_mg": 6,
+        "carbs_g": 3.0,
+        "protein_g": 0.0,
+        "fat_g": 0.0,
+        "sugar_g": 2.5
+      }
+    },
+    {
+      "index": 54,
+      "id": "kefir",
+      "name": "Kefir",
+      "category": "fermented",
+      "nutrition_per_100ml": {
+        "calories": 40,
+        "caffeine_mg": 0,
+        "carbs_g": 4.5,
+        "protein_g": 3.5,
+        "fat_g": 1.0,
+        "sugar_g": 4.5
+      }
+    },
+    {
+      "index": 55,
+      "id": "unknown",
+      "name": "Unknown Drink",
+      "category": "unknown",
+      "nutrition_per_100ml": {
+        "calories": 30,
+        "caffeine_mg": 0,
+        "carbs_g": 5.0,
+        "protein_g": 0.5,
+        "fat_g": 0.5,
+        "sugar_g": 3.0
+      }
+    }
+  ]
+}

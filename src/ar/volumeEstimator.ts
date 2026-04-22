@@ -1,65 +1,60 @@
 /**
- * Volume Estimator
- * 
- * Bridges to the native ARKit Swift module (ARScanModule.swift)
- * which uses iPhone motion sensors + camera to estimate cup volume.
- * 
- * The ARKit module uses VIO (Visual-Inertial Odometry) to establish
- * real-world scale from phone motion, then raycasting to measure
- * the cup dimensions in millimeters.
- * 
- * Falls back to standard cup size estimates if ARKit fails.
+ * volumeEstimator.ts
+ * Bridges to VolumeEstimatorModule.swift (Vision framework)
+ *
+ * The native module:
+ * - Extracts 5 frames from the recorded video
+ * - Detects cup boundaries using Vision rectangle detection
+ * - Measures aspect ratio to classify cup type
+ * - Detects liquid surface via color gradient analysis
+ * - Returns volume + fill level estimates
  */
 
 import { NativeModules } from 'react-native'
 import type { VolumeEstimate } from '../types'
 
-const { ARScanModule } = NativeModules
+const { VolumeEstimatorModule } = NativeModules
 
-// Standard cup sizes as fallback (in ml)
-const STANDARD_SIZES = {
-  small:  240,  // 8oz
-  medium: 354,  // 12oz
-  large:  473,  // 16oz
-  xlarge: 591,  // 20oz
-}
-
-type ARMeasurement = {
+type NativeVolumeResult = {
+  success: boolean
   totalVolumeMl: number
   fillLevelPct: number
-  success: boolean
-  error?: string
+  liquidVolumeMl: number
+  cupType: string
+  method: string
 }
 
 export async function estimateVolume(videoPath: string): Promise<VolumeEstimate> {
-  // Try ARKit first
-  if (ARScanModule?.estimateVolume) {
-    try {
-      const result: ARMeasurement = await ARScanModule.estimateVolume(videoPath)
-
-      if (result.success && result.totalVolumeMl > 0) {
-        const fillDecimal = result.fillLevelPct / 100
-        return {
-          totalVolumeMl:  result.totalVolumeMl,
-          fillLevelPct:   result.fillLevelPct,
-          liquidVolumeMl: Math.round(result.totalVolumeMl * fillDecimal),
-          method: 'arkit',
-        }
-      }
-    } catch (e) {
-      console.warn('ARKit volume estimation failed, using fallback:', e)
-    }
+  if (!VolumeEstimatorModule?.estimateVolume) {
+    console.warn('[VolumeEstimator] Native module not available, using fallback')
+    return fallback()
   }
 
-  // Fallback: use medium cup size with 80% fill estimate
-  const totalVolumeMl  = STANDARD_SIZES.medium
-  const fillLevelPct   = 80
-  const liquidVolumeMl = Math.round(totalVolumeMl * (fillLevelPct / 100))
+  try {
+    const result: NativeVolumeResult = await VolumeEstimatorModule.estimateVolume(videoPath)
 
+    if (!result.success) {
+      console.warn('[VolumeEstimator] Estimation failed, using fallback:', result.method)
+      return fallback()
+    }
+
+    return {
+      totalVolumeMl:  result.totalVolumeMl,
+      fillLevelPct:   result.fillLevelPct,
+      liquidVolumeMl: result.liquidVolumeMl,
+      method:         'vision',
+    }
+  } catch (e) {
+    console.error('[VolumeEstimator] Error:', e)
+    return fallback()
+  }
+}
+
+function fallback(): VolumeEstimate {
   return {
-    totalVolumeMl,
-    fillLevelPct,
-    liquidVolumeMl,
-    method: 'fallback',
+    totalVolumeMl:  354,
+    fillLevelPct:   80,
+    liquidVolumeMl: 283,
+    method:         'fallback',
   }
 }
