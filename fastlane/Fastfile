@@ -55,7 +55,7 @@ platform :ios do
       configuration:    "Release",
       skip_package_ipa: true,
       archive_path:     "./build/DrinkScanAI.xcarchive",
-      xcargs:           "CODE_SIGN_IDENTITY='' CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO IPHONEOS_DEPLOYMENT_TARGET=18.0 SWIFT_OBJC_BRIDGING_HEADER='DrinkScanAI/DrinkScanAI-Bridging-Header.h'",
+      xcargs:           "CODE_SIGN_IDENTITY='' CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO IPHONEOS_DEPLOYMENT_TARGET=18.0",
       output_directory: "./build",
       xcodebuild_formatter: ""
     )

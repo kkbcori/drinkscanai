@@ -25,7 +25,6 @@ target 'DrinkScanAI' do
       :mac_catalyst_enabled => false
     )
 
-    # Disable code signing on all Pod targets — prevents Embed Pods Frameworks hang in CI
     installer.pods_project.targets.each do |target|
       target.build_configurations.each do |cfg|
         cfg.build_settings['CODE_SIGNING_ALLOWED']        = 'NO'
@@ -39,6 +38,14 @@ target 'DrinkScanAI' do
       target.xcconfigs.each do |config_name, config_file|
         config_file.attributes['CODE_SIGNING_ALLOWED']  = 'NO'
         config_file.attributes['CODE_SIGNING_REQUIRED'] = 'NO'
+      end
+    end
+
+    # Set bridging header only for the main DrinkScanAI app target
+    main_target = installer.pods_project.targets.find { |t| t.name == 'DrinkScanAI' }
+    if main_target
+      main_target.build_configurations.each do |cfg|
+        cfg.build_settings['SWIFT_OBJC_BRIDGING_HEADER'] = 'DrinkScanAI/DrinkScanAI-Bridging-Header.h'
       end
     end
   end
