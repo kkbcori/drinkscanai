@@ -7,6 +7,18 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		F201CD6DA70B4CF592FF6931 /* drink_classes.json in Resources */ = {isa = PBXBuildFile; fileRef = E77F1C0A8EC44F729C9AAB29 /* drink_classes.json */; };
+
+		36A31B09AF3B4365B327470E /* mobilenetv3_drinks.onnx in Resources */ = {isa = PBXBuildFile; fileRef = FBBA8662379F40FABF8A3EA3 /* mobilenetv3_drinks.onnx */; };
+
+		32E8A04F0280448C863C6930 /* VolumeEstimatorModule.m in Sources */ = {isa = PBXBuildFile; fileRef = 7B3C557F4A9E456AA3B7A4EA /* VolumeEstimatorModule.m */; };
+
+		BD0851FBC21541A881A5D0F1 /* VolumeEstimatorModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6EC50193F21E4FD5BD98931D /* VolumeEstimatorModule.swift */; };
+
+		3D21E259A26F450B8ABDCDF3 /* FrameExtractorModule.m in Sources */ = {isa = PBXBuildFile; fileRef = 3CA0FF9B730348B8B573E53D /* FrameExtractorModule.m */; };
+
+		B0F201194D10443895E422B5 /* FrameExtractorModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = 539C844E2BC94D89A2DBBD05 /* FrameExtractorModule.swift */; };
+
 		00E356F31AD99517003FC87E /* DrinkScanAITests.m in Sources */ = {isa = PBXBuildFile; fileRef = 00E356F21AD99517003FC87E /* DrinkScanAITests.m */; };
 		0C80B921A6F3F58F76C31292 /* libPods-DrinkScanAI.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 5DCACB8F33CDC322A6C60F78 /* libPods-DrinkScanAI.a */; };
 		13B07FBC1A68108700A75B9A /* AppDelegate.mm in Sources */ = {isa = PBXBuildFile; fileRef = 13B07FB01A68108700A75B9A /* AppDelegate.mm */; };
@@ -27,6 +39,18 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		E77F1C0A8EC44F729C9AAB29 /* drink_classes.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = drink_classes.json; sourceTree = "<group>"; };
+
+		FBBA8662379F40FABF8A3EA3 /* mobilenetv3_drinks.onnx */ = {isa = PBXFileReference; lastKnownFileType = file; path = mobilenetv3_drinks.onnx; sourceTree = "<group>"; };
+
+		7B3C557F4A9E456AA3B7A4EA /* VolumeEstimatorModule.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = VolumeEstimatorModule.m; sourceTree = "<group>"; };
+
+		6EC50193F21E4FD5BD98931D /* VolumeEstimatorModule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VolumeEstimatorModule.swift; sourceTree = "<group>"; };
+
+		3CA0FF9B730348B8B573E53D /* FrameExtractorModule.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = FrameExtractorModule.m; sourceTree = "<group>"; };
+
+		539C844E2BC94D89A2DBBD05 /* FrameExtractorModule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameExtractorModule.swift; sourceTree = "<group>"; };
+
 		00E356EE1AD99517003FC87E /* DrinkScanAITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = DrinkScanAITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		00E356F11AD99517003FC87E /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		00E356F21AD99517003FC87E /* DrinkScanAITests.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = DrinkScanAITests.m; sourceTree = "<group>"; };
@@ -86,6 +110,12 @@
 		13B07FAE1A68108700A75B9A /* DrinkScanAI */ = {
 			isa = PBXGroup;
 			children = (
+				E77F1C0A8EC44F729C9AAB29 /* drink_classes.json */,
+				FBBA8662379F40FABF8A3EA3 /* mobilenetv3_drinks.onnx */,
+				7B3C557F4A9E456AA3B7A4EA /* VolumeEstimatorModule.m */,
+				6EC50193F21E4FD5BD98931D /* VolumeEstimatorModule.swift */,
+				3CA0FF9B730348B8B573E53D /* FrameExtractorModule.m */,
+				539C844E2BC94D89A2DBBD05 /* FrameExtractorModule.swift */,
 				13B07FAF1A68108700A75B9A /* AppDelegate.h */,
 				13B07FB01A68108700A75B9A /* AppDelegate.mm */,
 				13B07FB51A68108700A75B9A /* Images.xcassets */,
@@ -234,6 +264,8 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F201CD6DA70B4CF592FF6931 /* drink_classes.json in Resources */,
+				36A31B09AF3B4365B327470E /* mobilenetv3_drinks.onnx in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -384,6 +416,10 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				32E8A04F0280448C863C6930 /* VolumeEstimatorModule.m in Sources */,
+				BD0851FBC21541A881A5D0F1 /* VolumeEstimatorModule.swift in Sources */,
+				3D21E259A26F450B8ABDCDF3 /* FrameExtractorModule.m in Sources */,
+				B0F201194D10443895E422B5 /* FrameExtractorModule.swift in Sources */,
 				00E356F31AD99517003FC87E /* DrinkScanAITests.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

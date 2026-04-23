@@ -34,7 +34,9 @@
 		<true/>
 	</dict>
 	<key>NSCameraUsageDescription</key>
-	<string>DrinkScanAI uses the camera to scan your cup and identify your drink.</string>
+	<string>DrinkScanAI uses the camera to scan your drink and measure the cup.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>DrinkScanAI needs microphone access for video recording during drink scanning.</string>
 	<key>NSMotionUsageDescription</key>
 	<string>DrinkScanAI uses motion sensors to measure cup dimensions with AR.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
@@ -49,9 +51,9 @@
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
-		<string>UIInterfaceOrientationLandscapeLeft</string>
-		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<false/>
 </dict>
