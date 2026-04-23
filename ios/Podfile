@@ -41,12 +41,7 @@ target 'DrinkScanAI' do
       end
     end
 
-    # Set bridging header only for the main DrinkScanAI app target
-    main_target = installer.pods_project.targets.find { |t| t.name == 'DrinkScanAI' }
-    if main_target
-      main_target.build_configurations.each do |cfg|
-        cfg.build_settings['SWIFT_OBJC_BRIDGING_HEADER'] = 'DrinkScanAI/DrinkScanAI-Bridging-Header.h'
-      end
-    end
+    # Set bridging header only for the DrinkScanAI app target in project.pbxproj
+    # (done via scripts/patch_bridging_header.py — Pods project doesn't include app target)
   end
 end
