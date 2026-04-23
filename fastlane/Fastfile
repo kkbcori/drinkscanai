@@ -33,6 +33,14 @@ platform :ios do
       app_identifier: "com.drinkscanai"
     )
 
+    # Set bridging header so Swift modules can access React Native ObjC headers
+    update_code_signing_settings(
+      build_settings: {
+        "SWIFT_OBJC_BRIDGING_HEADER" => "DrinkScanAI/DrinkScanAI-Bridging-Header.h"
+      },
+      path: "ios/DrinkScanAI.xcodeproj"
+    )
+
     update_code_signing_settings(
       use_automatic_signing: false,
       path:                  "ios/DrinkScanAI.xcodeproj",

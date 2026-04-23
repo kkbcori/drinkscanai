@@ -216,3 +216,30 @@ def patch_project():
 
 if __name__ == "__main__":
     patch_project()
+
+
+def set_bridging_header():
+    """Set the Swift bridging header in build settings."""
+    content = read_project()
+    
+    bridging_header = "DrinkScanAI/DrinkScanAI-Bridging-Header.h"
+    
+    if bridging_header in content:
+        print("ℹ️  Bridging header already set")
+        return
+    
+    # Find Release and Debug build configurations and add the setting
+    pattern = r'(SWIFT_VERSION = 5\.0;)'
+    replacement = r'\1\n\t\t\t\tSWIFT_OBJC_BRIDGING_HEADER = "' + bridging_header + r'";'
+    
+    new_content = re.sub(pattern, replacement, content)
+    
+    if new_content != content:
+        write_project(new_content)
+        print(f"✓ Set bridging header: {bridging_header}")
+    else:
+        print("⚠️  Could not find SWIFT_VERSION to anchor bridging header setting")
+        print(f"   Manually set in Xcode: SWIFT_OBJC_BRIDGING_HEADER = {bridging_header}")
+
+# Run bridging header fix too
+set_bridging_header()
