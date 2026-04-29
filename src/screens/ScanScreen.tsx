@@ -6,7 +6,7 @@ import {
 import { Camera, useCameraDevice, useCameraPermission } from 'react-native-vision-camera'
 import type { ScanResult } from '../types'
 import { extractBestFrame } from '../ml/frameExtractor'
-import { classifyDrink, getTopCandidates, preloadModel } from '../ml/drinkClassifier'
+import { classifyDrink, getTopCandidates, preloadModel, isUsingRealML } from '../ml/drinkClassifier'
 import { estimateVolume } from '../ar/volumeEstimator'
 import { calculateNutrition, getDrinkName, getAllDrinkIds, getDrinkInfo } from '../db/nutritionDB'
 import { saveScan, confirmScan, updateCorrection, generateScanId } from '../db/historyDB'
@@ -237,7 +237,7 @@ export default function ScanScreen() {
             <Text style={s.methodTxt}>
               {result.volume.method === 'vision' ? '📐 Vision measured' : '📐 Size estimated'}
               {' · '}
-              {result.identification.modelVersion}
+              {isUsingRealML() ? '🧠 CoreML Neural Engine' : '⚠️ Heuristic (CoreML model pending)'}
             </Text>
           </View>
 

@@ -22,6 +22,16 @@ PROJECT_PATH = "ios/DrinkScanAI.xcodeproj/project.pbxproj"
 
 FILES_TO_ADD = [
     {
+        "path": "DrinkScanAI/Modules/DrinkClassifierModule.swift",
+        "name": "DrinkClassifierModule.swift",
+        "type": "sourcecode.swift",
+    },
+    {
+        "path": "DrinkScanAI/Modules/DrinkClassifierModule.m",
+        "name": "DrinkClassifierModule.m",
+        "type": "sourcecode.c.objc",
+    },
+    {
         "path": "DrinkScanAI/Modules/FrameExtractorModule.swift",
         "name": "FrameExtractorModule.swift",
         "type": "sourcecode.swift",
@@ -243,3 +253,64 @@ def set_bridging_header():
 
 # Run bridging header fix too
 set_bridging_header()
+
+
+def add_mlpackage_to_resources():
+    """
+    Adds DrinkClassifier.mlpackage to Xcode as a folder reference.
+    mlpackage is a folder, not a single file — needs special handling.
+    """
+    content = read_project()
+
+    if 'DrinkClassifier.mlpackage' in content:
+        print("ℹ️  DrinkClassifier.mlpackage already in project")
+        return
+
+    pkg_uuid    = gen_uuid()
+    build_uuid  = gen_uuid()
+
+    # PBXFileReference for folder
+    ref_entry = (
+        f'\t\t{pkg_uuid} /* DrinkClassifier.mlpackage */ = '
+        f'{{isa = PBXFileReference; lastKnownFileType = wrapper.mlpackage; '
+        f'path = DrinkClassifier.mlpackage; sourceTree = "<group>"; }};\n'
+    )
+
+    # PBXBuildFile for Resources phase
+    build_entry = (
+        f'\t\t{build_uuid} /* DrinkClassifier.mlpackage in Resources */ = '
+        f'{{isa = PBXBuildFile; fileRef = {pkg_uuid} /* DrinkClassifier.mlpackage */; }};\n'
+    )
+
+    # Insert into PBXFileReference section
+    ref_pos = find_section(content, "PBXFileReference")
+    if ref_pos == -1:
+        print("✗ PBXFileReference section not found")
+        return
+    content = content[:ref_pos] + '\n' + ref_entry + content[ref_pos:]
+
+    # Insert into PBXBuildFile section
+    build_pos = find_section(content, "PBXBuildFile")
+    if build_pos == -1:
+        print("✗ PBXBuildFile section not found")
+        return
+    content = content[:build_pos] + '\n' + build_entry + content[build_pos:]
+
+    # Add to Resources build phase
+    res_uuid = find_resources_build_phase(content)
+    if res_uuid:
+        phase_marker = f'{res_uuid} /* Resources */ = {{'
+        phase_pos = content.find(phase_marker)
+        if phase_pos != -1:
+            files_pos = content.find('files = (', phase_pos)
+            if files_pos != -1:
+                insert_pos = files_pos + len('files = (') + 1
+                build_ref_line = f'\t\t\t\t{build_uuid} /* DrinkClassifier.mlpackage in Resources */,\n'
+                content = content[:insert_pos] + build_ref_line + content[insert_pos:]
+                print("  ✓ Added DrinkClassifier.mlpackage to Resources")
+
+    write_project(content)
+
+
+# Run mlpackage registration
+add_mlpackage_to_resources()
