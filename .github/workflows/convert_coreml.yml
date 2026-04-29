@@ -19,7 +19,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install coremltools==8.1 timm torch torchvision onnx numpy Pillow
+          pip install "torch==2.4.0" torchvision==0.19.0 --index-url https://download.pytorch.org/whl/cpu
+          pip install coremltools==8.1 timm onnx onnxscript numpy Pillow
 
       - name: Build and convert model
         run: |
