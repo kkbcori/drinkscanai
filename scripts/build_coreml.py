@@ -1,0 +1,151 @@
+import os
+import json
+import numpy as np
+import torch
+import torch.nn as nn
+import timm
+import coremltools as ct
+from PIL import Image
+
+IMG_SIZE = 224
+
+DRINK_CLASSES = {
+    'espresso':        {'name': 'Espresso',          'category': 'coffee'},
+    'americano':       {'name': 'Americano',          'category': 'coffee'},
+    'coffee_black':    {'name': 'Black Coffee',       'category': 'coffee'},
+    'latte':           {'name': 'Latte',              'category': 'coffee'},
+    'cappuccino':      {'name': 'Cappuccino',         'category': 'coffee'},
+    'flat_white':      {'name': 'Flat White',         'category': 'coffee'},
+    'mocha':           {'name': 'Mocha',              'category': 'coffee'},
+    'cold_brew':       {'name': 'Cold Brew Coffee',   'category': 'coffee'},
+    'iced_coffee':     {'name': 'Iced Coffee',        'category': 'coffee'},
+    'macchiato':       {'name': 'Macchiato',          'category': 'coffee'},
+    'black_tea':       {'name': 'Black Tea',          'category': 'tea'},
+    'green_tea':       {'name': 'Green Tea',          'category': 'tea'},
+    'matcha_latte':    {'name': 'Matcha Latte',       'category': 'tea'},
+    'chai_latte':      {'name': 'Chai Latte',         'category': 'tea'},
+    'herbal_tea':      {'name': 'Herbal Tea',         'category': 'tea'},
+    'iced_tea':        {'name': 'Iced Tea',           'category': 'tea'},
+    'bubble_tea':      {'name': 'Bubble Tea',         'category': 'tea'},
+    'orange_juice':    {'name': 'Orange Juice',       'category': 'juice'},
+    'apple_juice':     {'name': 'Apple Juice',        'category': 'juice'},
+    'grape_juice':     {'name': 'Grape Juice',        'category': 'juice'},
+    'pineapple_juice': {'name': 'Pineapple Juice',    'category': 'juice'},
+    'mango_juice':     {'name': 'Mango Juice',        'category': 'juice'},
+    'cranberry_juice': {'name': 'Cranberry Juice',    'category': 'juice'},
+    'tomato_juice':    {'name': 'Tomato Juice',       'category': 'juice'},
+    'lemonade':        {'name': 'Lemonade',           'category': 'juice'},
+    'whole_milk':      {'name': 'Whole Milk',         'category': 'milk'},
+    'skim_milk':       {'name': 'Skim Milk',          'category': 'milk'},
+    'oat_milk':        {'name': 'Oat Milk',           'category': 'milk'},
+    'almond_milk':     {'name': 'Almond Milk',        'category': 'milk'},
+    'soy_milk':        {'name': 'Soy Milk',           'category': 'milk'},
+    'coconut_milk':    {'name': 'Coconut Milk Drink', 'category': 'milk'},
+    'chocolate_milk':  {'name': 'Chocolate Milk',     'category': 'milk'},
+    'cola':            {'name': 'Cola',               'category': 'soda'},
+    'diet_cola':       {'name': 'Diet Cola',          'category': 'soda'},
+    'lemon_lime_soda': {'name': 'Lemon-Lime Soda',    'category': 'soda'},
+    'ginger_ale':      {'name': 'Ginger Ale',         'category': 'soda'},
+    'orange_soda':     {'name': 'Orange Soda',        'category': 'soda'},
+    'root_beer':       {'name': 'Root Beer',          'category': 'soda'},
+    'water':           {'name': 'Still Water',        'category': 'water'},
+    'sparkling_water': {'name': 'Sparkling Water',    'category': 'water'},
+    'coconut_water':   {'name': 'Coconut Water',      'category': 'water'},
+    'flavored_water':  {'name': 'Flavored Water',     'category': 'water'},
+    'energy_drink':    {'name': 'Energy Drink',       'category': 'energy_drink'},
+    'sports_drink':    {'name': 'Sports Drink',       'category': 'sports'},
+    'protein_shake':   {'name': 'Protein Shake',      'category': 'sports'},
+    'fruit_smoothie':  {'name': 'Fruit Smoothie',     'category': 'smoothie'},
+    'green_smoothie':  {'name': 'Green Smoothie',     'category': 'smoothie'},
+    'hot_chocolate':   {'name': 'Hot Chocolate',      'category': 'hot_drink'},
+    'milkshake':       {'name': 'Milkshake',          'category': 'hot_drink'},
+    'beer':            {'name': 'Beer',               'category': 'alcohol'},
+    'wine_red':        {'name': 'Red Wine',           'category': 'alcohol'},
+    'wine_white':      {'name': 'White Wine',         'category': 'alcohol'},
+    'cocktail':        {'name': 'Cocktail',           'category': 'alcohol'},
+    'kombucha':        {'name': 'Kombucha',           'category': 'fermented'},
+    'kefir':           {'name': 'Kefir',              'category': 'fermented'},
+    'unknown':         {'name': 'Unknown Drink',      'category': 'unknown'},
+}
+
+CLASS_IDS   = list(DRINK_CLASSES.keys())
+CLASS_NAMES = [DRINK_CLASSES[k]['name'] for k in CLASS_IDS]
+NUM_CLASSES = len(CLASS_IDS)
+print(f'Classes: {NUM_CLASSES}')
+
+# Build model
+print('Building EfficientNet-B0...')
+backbone = timm.create_model('efficientnet_b0', pretrained=True, num_classes=0)
+backbone.eval()
+with torch.no_grad():
+    feat_dim = backbone(torch.zeros(1, 3, IMG_SIZE, IMG_SIZE)).shape[-1]
+print(f'Feature dim: {feat_dim}')
+
+class DrinkClassifier(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.backbone   = backbone
+        self.classifier = nn.Sequential(
+            nn.Linear(feat_dim, 256), nn.ReLU(), nn.Dropout(0.2),
+            nn.Linear(256, NUM_CLASSES),
+        )
+        for layer in self.classifier:
+            if isinstance(layer, nn.Linear):
+                nn.init.xavier_uniform_(layer.weight)
+                nn.init.zeros_(layer.bias)
+    def forward(self, x):
+        return self.classifier(self.backbone(x))
+
+model = DrinkClassifier()
+model.eval()
+
+# Trace
+print('Tracing model...')
+dummy = torch.zeros(1, 3, IMG_SIZE, IMG_SIZE)
+with torch.no_grad():
+    traced = torch.jit.trace(model, dummy)
+print('Trace complete')
+
+# Convert PyTorch -> CoreML directly (no ONNX)
+print('Converting PyTorch to CoreML...')
+mlmodel = ct.convert(
+    traced,
+    inputs=[ct.ImageType(
+        name='image',
+        shape=(1, 3, IMG_SIZE, IMG_SIZE),
+        scale=1.0/255.0,
+        bias=[-0.485/0.229, -0.456/0.224, -0.406/0.225],
+        color_layout=ct.colorlayout.RGB,
+    )],
+    outputs=[ct.TensorType(name='logits')],
+    minimum_deployment_target=ct.target.iOS16,
+    compute_units=ct.ComputeUnit.ALL,
+)
+print('Conversion complete')
+
+# Metadata
+mlmodel.short_description = 'DrinkScanAI drink classifier - 56 categories'
+mlmodel.author  = 'DrinkScanAI'
+mlmodel.version = '1.0'
+mlmodel.user_defined_metadata['classes'] = json.dumps([
+    {'index': i, 'id': CLASS_IDS[i], 'name': CLASS_NAMES[i]}
+    for i in range(NUM_CLASSES)
+])
+mlmodel.user_defined_metadata['num_classes'] = str(NUM_CLASSES)
+mlmodel.user_defined_metadata['input_size']  = str(IMG_SIZE)
+
+# Save
+out_dir  = 'ios/DrinkScanAI/ML'
+out_path = f'{out_dir}/DrinkClassifier.mlpackage'
+os.makedirs(out_dir, exist_ok=True)
+mlmodel.save(out_path)
+print(f'Saved: {out_path}')
+
+# Validate
+print('Validating...')
+dummy_img = Image.fromarray(np.random.randint(0, 255, (IMG_SIZE, IMG_SIZE, 3), dtype=np.uint8))
+result = mlmodel.predict({'image': dummy_img})
+logits = list(result['logits'][0])
+top_i  = logits.index(max(logits))
+print(f'Test prediction: {CLASS_NAMES[top_i]}')
+print('Done!')
