@@ -25,13 +25,13 @@ jobs:
       - name: Build and convert model
         run: |
           python - << 'PYEOF'
+          import os
           import torch
           import torch.nn as nn
           import timm
           import coremltools as ct
           import onnx
           import json
-          import io
           import numpy as np
           from PIL import Image
 
