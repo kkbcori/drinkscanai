@@ -140,9 +140,10 @@ jobs:
 
           # Convert to CoreML from file
           print('Converting to CoreML...')
+          onnx_model = onnx.load(onnx_path)
           mlmodel = ct.convert(
-              onnx_path,
-              source='onnx',
+              onnx_model,
+              source='auto',
               inputs=[ct.ImageType(
                   name='image', shape=(1, 3, IMG_SIZE, IMG_SIZE),
                   scale=1/255.0,
