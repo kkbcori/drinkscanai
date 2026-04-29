@@ -1,7 +1,7 @@
-name: Convert ONNX to CoreML
+name: Convert to CoreML
 
 on:
-  workflow_dispatch:  # Manual trigger only
+  workflow_dispatch:
 
 jobs:
   convert:
@@ -19,178 +19,176 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install "torch==2.4.0" torchvision==0.19.0 --index-url https://download.pytorch.org/whl/cpu
-          pip install coremltools==8.1 timm onnx onnxscript numpy Pillow
+          pip install "torch==2.4.0" "torchvision==0.19.0" --index-url https://download.pytorch.org/whl/cpu
+          pip install "coremltools==8.1" "timm==0.9.16" "numpy<2" "Pillow"
 
       - name: Build and convert model
         run: |
-          python - << 'PYEOF'
-          import os
-          import torch
-          import torch.nn as nn
-          import timm
-          import coremltools as ct
-          import onnx
-          import json
-          import numpy as np
-          from PIL import Image
+          python3 << 'PYEOF'
+import os
+import json
+import numpy as np
+import torch
+import torch.nn as nn
+import timm
+import coremltools as ct
+from PIL import Image
 
-          IMG_SIZE = 224
+IMG_SIZE = 224
 
-          DRINK_CLASSES = {
-              'espresso':        {'name': 'Espresso',          'category': 'coffee',       'calories': 9,   'caffeine_mg': 212},
-              'americano':       {'name': 'Americano',          'category': 'coffee',       'calories': 3,   'caffeine_mg': 35},
-              'coffee_black':    {'name': 'Black Coffee',       'category': 'coffee',       'calories': 1,   'caffeine_mg': 40},
-              'latte':           {'name': 'Latte',              'category': 'coffee',       'calories': 54,  'caffeine_mg': 27},
-              'cappuccino':      {'name': 'Cappuccino',         'category': 'coffee',       'calories': 40,  'caffeine_mg': 27},
-              'flat_white':      {'name': 'Flat White',         'category': 'coffee',       'calories': 60,  'caffeine_mg': 55},
-              'mocha':           {'name': 'Mocha',              'category': 'coffee',       'calories': 70,  'caffeine_mg': 27},
-              'cold_brew':       {'name': 'Cold Brew Coffee',   'category': 'coffee',       'calories': 5,   'caffeine_mg': 83},
-              'iced_coffee':     {'name': 'Iced Coffee',        'category': 'coffee',       'calories': 25,  'caffeine_mg': 30},
-              'macchiato':       {'name': 'Macchiato',          'category': 'coffee',       'calories': 13,  'caffeine_mg': 53},
-              'black_tea':       {'name': 'Black Tea',          'category': 'tea',          'calories': 1,   'caffeine_mg': 20},
-              'green_tea':       {'name': 'Green Tea',          'category': 'tea',          'calories': 1,   'caffeine_mg': 12},
-              'matcha_latte':    {'name': 'Matcha Latte',       'category': 'tea',          'calories': 50,  'caffeine_mg': 35},
-              'chai_latte':      {'name': 'Chai Latte',         'category': 'tea',          'calories': 62,  'caffeine_mg': 14},
-              'herbal_tea':      {'name': 'Herbal Tea',         'category': 'tea',          'calories': 1,   'caffeine_mg': 0},
-              'iced_tea':        {'name': 'Iced Tea',           'category': 'tea',          'calories': 16,  'caffeine_mg': 5},
-              'bubble_tea':      {'name': 'Bubble Tea',         'category': 'tea',          'calories': 80,  'caffeine_mg': 15},
-              'orange_juice':    {'name': 'Orange Juice',       'category': 'juice',        'calories': 45,  'caffeine_mg': 0},
-              'apple_juice':     {'name': 'Apple Juice',        'category': 'juice',        'calories': 46,  'caffeine_mg': 0},
-              'grape_juice':     {'name': 'Grape Juice',        'category': 'juice',        'calories': 60,  'caffeine_mg': 0},
-              'pineapple_juice': {'name': 'Pineapple Juice',    'category': 'juice',        'calories': 50,  'caffeine_mg': 0},
-              'mango_juice':     {'name': 'Mango Juice',        'category': 'juice',        'calories': 60,  'caffeine_mg': 0},
-              'cranberry_juice': {'name': 'Cranberry Juice',    'category': 'juice',        'calories': 46,  'caffeine_mg': 0},
-              'tomato_juice':    {'name': 'Tomato Juice',       'category': 'juice',        'calories': 17,  'caffeine_mg': 0},
-              'lemonade':        {'name': 'Lemonade',           'category': 'juice',        'calories': 40,  'caffeine_mg': 0},
-              'whole_milk':      {'name': 'Whole Milk',         'category': 'milk',         'calories': 61,  'caffeine_mg': 0},
-              'skim_milk':       {'name': 'Skim Milk',          'category': 'milk',         'calories': 34,  'caffeine_mg': 0},
-              'oat_milk':        {'name': 'Oat Milk',           'category': 'milk',         'calories': 47,  'caffeine_mg': 0},
-              'almond_milk':     {'name': 'Almond Milk',        'category': 'milk',         'calories': 17,  'caffeine_mg': 0},
-              'soy_milk':        {'name': 'Soy Milk',           'category': 'milk',         'calories': 54,  'caffeine_mg': 0},
-              'coconut_milk':    {'name': 'Coconut Milk Drink', 'category': 'milk',         'calories': 20,  'caffeine_mg': 0},
-              'chocolate_milk':  {'name': 'Chocolate Milk',     'category': 'milk',         'calories': 83,  'caffeine_mg': 2},
-              'cola':            {'name': 'Cola',               'category': 'soda',         'calories': 42,  'caffeine_mg': 10},
-              'diet_cola':       {'name': 'Diet Cola',          'category': 'soda',         'calories': 0,   'caffeine_mg': 12},
-              'lemon_lime_soda': {'name': 'Lemon-Lime Soda',    'category': 'soda',         'calories': 42,  'caffeine_mg': 0},
-              'ginger_ale':      {'name': 'Ginger Ale',         'category': 'soda',         'calories': 34,  'caffeine_mg': 0},
-              'orange_soda':     {'name': 'Orange Soda',        'category': 'soda',         'calories': 48,  'caffeine_mg': 0},
-              'root_beer':       {'name': 'Root Beer',          'category': 'soda',         'calories': 41,  'caffeine_mg': 0},
-              'water':           {'name': 'Still Water',        'category': 'water',        'calories': 0,   'caffeine_mg': 0},
-              'sparkling_water': {'name': 'Sparkling Water',    'category': 'water',        'calories': 0,   'caffeine_mg': 0},
-              'coconut_water':   {'name': 'Coconut Water',      'category': 'water',        'calories': 19,  'caffeine_mg': 0},
-              'flavored_water':  {'name': 'Flavored Water',     'category': 'water',        'calories': 8,   'caffeine_mg': 0},
-              'energy_drink':    {'name': 'Energy Drink',       'category': 'energy_drink', 'calories': 45,  'caffeine_mg': 32},
-              'sports_drink':    {'name': 'Sports Drink',       'category': 'sports',       'calories': 25,  'caffeine_mg': 0},
-              'protein_shake':   {'name': 'Protein Shake',      'category': 'sports',       'calories': 60,  'caffeine_mg': 0},
-              'fruit_smoothie':  {'name': 'Fruit Smoothie',     'category': 'smoothie',     'calories': 62,  'caffeine_mg': 0},
-              'green_smoothie':  {'name': 'Green Smoothie',     'category': 'smoothie',     'calories': 40,  'caffeine_mg': 0},
-              'hot_chocolate':   {'name': 'Hot Chocolate',      'category': 'hot_drink',    'calories': 67,  'caffeine_mg': 5},
-              'milkshake':       {'name': 'Milkshake',          'category': 'hot_drink',    'calories': 112, 'caffeine_mg': 0},
-              'beer':            {'name': 'Beer',               'category': 'alcohol',      'calories': 43,  'caffeine_mg': 0},
-              'wine_red':        {'name': 'Red Wine',           'category': 'alcohol',      'calories': 85,  'caffeine_mg': 0},
-              'wine_white':      {'name': 'White Wine',         'category': 'alcohol',      'calories': 82,  'caffeine_mg': 0},
-              'cocktail':        {'name': 'Cocktail',           'category': 'alcohol',      'calories': 100, 'caffeine_mg': 0},
-              'kombucha':        {'name': 'Kombucha',           'category': 'fermented',    'calories': 13,  'caffeine_mg': 6},
-              'kefir':           {'name': 'Kefir',              'category': 'fermented',    'calories': 40,  'caffeine_mg': 0},
-              'unknown':         {'name': 'Unknown Drink',      'category': 'unknown',      'calories': 30,  'caffeine_mg': 0},
-          }
+DRINK_CLASSES = {
+    'espresso':        {'name': 'Espresso',          'category': 'coffee'},
+    'americano':       {'name': 'Americano',          'category': 'coffee'},
+    'coffee_black':    {'name': 'Black Coffee',       'category': 'coffee'},
+    'latte':           {'name': 'Latte',              'category': 'coffee'},
+    'cappuccino':      {'name': 'Cappuccino',         'category': 'coffee'},
+    'flat_white':      {'name': 'Flat White',         'category': 'coffee'},
+    'mocha':           {'name': 'Mocha',              'category': 'coffee'},
+    'cold_brew':       {'name': 'Cold Brew Coffee',   'category': 'coffee'},
+    'iced_coffee':     {'name': 'Iced Coffee',        'category': 'coffee'},
+    'macchiato':       {'name': 'Macchiato',          'category': 'coffee'},
+    'black_tea':       {'name': 'Black Tea',          'category': 'tea'},
+    'green_tea':       {'name': 'Green Tea',          'category': 'tea'},
+    'matcha_latte':    {'name': 'Matcha Latte',       'category': 'tea'},
+    'chai_latte':      {'name': 'Chai Latte',         'category': 'tea'},
+    'herbal_tea':      {'name': 'Herbal Tea',         'category': 'tea'},
+    'iced_tea':        {'name': 'Iced Tea',           'category': 'tea'},
+    'bubble_tea':      {'name': 'Bubble Tea',         'category': 'tea'},
+    'orange_juice':    {'name': 'Orange Juice',       'category': 'juice'},
+    'apple_juice':     {'name': 'Apple Juice',        'category': 'juice'},
+    'grape_juice':     {'name': 'Grape Juice',        'category': 'juice'},
+    'pineapple_juice': {'name': 'Pineapple Juice',    'category': 'juice'},
+    'mango_juice':     {'name': 'Mango Juice',        'category': 'juice'},
+    'cranberry_juice': {'name': 'Cranberry Juice',    'category': 'juice'},
+    'tomato_juice':    {'name': 'Tomato Juice',       'category': 'juice'},
+    'lemonade':        {'name': 'Lemonade',           'category': 'juice'},
+    'whole_milk':      {'name': 'Whole Milk',         'category': 'milk'},
+    'skim_milk':       {'name': 'Skim Milk',          'category': 'milk'},
+    'oat_milk':        {'name': 'Oat Milk',           'category': 'milk'},
+    'almond_milk':     {'name': 'Almond Milk',        'category': 'milk'},
+    'soy_milk':        {'name': 'Soy Milk',           'category': 'milk'},
+    'coconut_milk':    {'name': 'Coconut Milk Drink', 'category': 'milk'},
+    'chocolate_milk':  {'name': 'Chocolate Milk',     'category': 'milk'},
+    'cola':            {'name': 'Cola',               'category': 'soda'},
+    'diet_cola':       {'name': 'Diet Cola',          'category': 'soda'},
+    'lemon_lime_soda': {'name': 'Lemon-Lime Soda',    'category': 'soda'},
+    'ginger_ale':      {'name': 'Ginger Ale',         'category': 'soda'},
+    'orange_soda':     {'name': 'Orange Soda',        'category': 'soda'},
+    'root_beer':       {'name': 'Root Beer',          'category': 'soda'},
+    'water':           {'name': 'Still Water',        'category': 'water'},
+    'sparkling_water': {'name': 'Sparkling Water',    'category': 'water'},
+    'coconut_water':   {'name': 'Coconut Water',      'category': 'water'},
+    'flavored_water':  {'name': 'Flavored Water',     'category': 'water'},
+    'energy_drink':    {'name': 'Energy Drink',       'category': 'energy_drink'},
+    'sports_drink':    {'name': 'Sports Drink',       'category': 'sports'},
+    'protein_shake':   {'name': 'Protein Shake',      'category': 'sports'},
+    'fruit_smoothie':  {'name': 'Fruit Smoothie',     'category': 'smoothie'},
+    'green_smoothie':  {'name': 'Green Smoothie',     'category': 'smoothie'},
+    'hot_chocolate':   {'name': 'Hot Chocolate',      'category': 'hot_drink'},
+    'milkshake':       {'name': 'Milkshake',          'category': 'hot_drink'},
+    'beer':            {'name': 'Beer',               'category': 'alcohol'},
+    'wine_red':        {'name': 'Red Wine',           'category': 'alcohol'},
+    'wine_white':      {'name': 'White Wine',         'category': 'alcohol'},
+    'cocktail':        {'name': 'Cocktail',           'category': 'alcohol'},
+    'kombucha':        {'name': 'Kombucha',           'category': 'fermented'},
+    'kefir':           {'name': 'Kefir',              'category': 'fermented'},
+    'unknown':         {'name': 'Unknown Drink',      'category': 'unknown'},
+}
 
-          CLASS_IDS   = list(DRINK_CLASSES.keys())
-          CLASS_NAMES = [DRINK_CLASSES[k]['name'] for k in CLASS_IDS]
-          NUM_CLASSES = len(CLASS_IDS)
-          print(f'Classes: {NUM_CLASSES}')
+CLASS_IDS   = list(DRINK_CLASSES.keys())
+CLASS_NAMES = [DRINK_CLASSES[k]['name'] for k in CLASS_IDS]
+NUM_CLASSES = len(CLASS_IDS)
+print(f'Classes: {NUM_CLASSES}')
 
-          # Build model
-          print('Building EfficientNet-B0...')
-          backbone = timm.create_model('efficientnet_b0', pretrained=True, num_classes=0)
-          backbone.eval()
-          with torch.no_grad():
-              feat_dim = backbone(torch.zeros(1, 3, IMG_SIZE, IMG_SIZE)).shape[-1]
+# ── Build PyTorch model ──────────────────────────────────────────────────
+print('Building EfficientNet-B0...')
+backbone = timm.create_model('efficientnet_b0', pretrained=True, num_classes=0)
+backbone.eval()
 
-          class DrinkClassifier(nn.Module):
-              def __init__(self):
-                  super().__init__()
-                  self.backbone   = backbone
-                  self.classifier = nn.Sequential(
-                      nn.Linear(feat_dim, 256), nn.ReLU(), nn.Dropout(0.2),
-                      nn.Linear(256, NUM_CLASSES),
-                  )
-                  for layer in self.classifier:
-                      if isinstance(layer, nn.Linear):
-                          nn.init.xavier_uniform_(layer.weight)
-                          nn.init.zeros_(layer.bias)
-              def forward(self, x):
-                  return self.classifier(self.backbone(x))
+with torch.no_grad():
+    feat_dim = backbone(torch.zeros(1, 3, IMG_SIZE, IMG_SIZE)).shape[-1]
+print(f'Feature dim: {feat_dim}')
 
-          model = DrinkClassifier()
-          model.eval()
+class DrinkClassifier(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.backbone   = backbone
+        self.classifier = nn.Sequential(
+            nn.Linear(feat_dim, 256), nn.ReLU(), nn.Dropout(0.2),
+            nn.Linear(256, NUM_CLASSES),
+        )
+        for layer in self.classifier:
+            if isinstance(layer, nn.Linear):
+                nn.init.xavier_uniform_(layer.weight)
+                nn.init.zeros_(layer.bias)
+    def forward(self, x):
+        return self.classifier(self.backbone(x))
 
-          # Export ONNX to temp file
-          print('Exporting ONNX...')
-          onnx_path = '/tmp/drink_model.onnx'
-          with torch.no_grad():
-              torch.onnx.export(
-                  model, torch.zeros(1, 3, IMG_SIZE, IMG_SIZE), onnx_path,
-                  opset_version=17, input_names=['image'], output_names=['logits'],
-                  do_constant_folding=True,
-              )
-          size_mb = os.path.getsize(onnx_path)/1024/1024
-          print(f'ONNX size: {size_mb:.1f}MB')
+model = DrinkClassifier()
+model.eval()
 
-          # Convert to CoreML from file
-          print('Converting to CoreML...')
-          onnx_model = onnx.load(onnx_path)
-          mlmodel = ct.convert(
-              onnx_model,
-              source='auto',
-              inputs=[ct.ImageType(
-                  name='image', shape=(1, 3, IMG_SIZE, IMG_SIZE),
-                  scale=1/255.0,
-                  bias=[-0.485/0.229, -0.456/0.224, -0.406/0.225],
-                  color_layout=ct.colorlayout.RGB,
-              )],
-              outputs=[ct.TensorType(name='logits')],
-              minimum_deployment_target=ct.target.iOS16,
-              compute_units=ct.ComputeUnit.ALL,
-          )
+# ── Trace PyTorch model (required for CoreML conversion) ─────────────────
+print('Tracing model...')
+dummy = torch.zeros(1, 3, IMG_SIZE, IMG_SIZE)
+with torch.no_grad():
+    traced = torch.jit.trace(model, dummy)
+print('Trace complete')
 
-          # Metadata
-          mlmodel.short_description = 'DrinkScanAI classifier — 56 drink categories'
-          mlmodel.author  = 'DrinkScanAI'
-          mlmodel.version = '1.0'
-          mlmodel.user_defined_metadata['classes'] = json.dumps([
-              {'index': i, 'id': CLASS_IDS[i], 'name': CLASS_NAMES[i]}
-              for i in range(NUM_CLASSES)
-          ])
-          mlmodel.user_defined_metadata['num_classes'] = str(NUM_CLASSES)
-          mlmodel.user_defined_metadata['input_size']  = str(IMG_SIZE)
+# ── Convert directly PyTorch → CoreML (no ONNX needed) ───────────────────
+print('Converting PyTorch → CoreML...')
+mlmodel = ct.convert(
+    traced,
+    inputs=[ct.ImageType(
+        name='image',
+        shape=(1, 3, IMG_SIZE, IMG_SIZE),
+        scale=1.0/255.0,
+        bias=[-0.485/0.229, -0.456/0.224, -0.406/0.225],
+        color_layout=ct.colorlayout.RGB,
+    )],
+    outputs=[ct.TensorType(name='logits')],
+    minimum_deployment_target=ct.target.iOS16,
+    compute_units=ct.ComputeUnit.ALL,
+)
+print('Conversion complete')
 
-          # Save
-          import os
-          os.makedirs('ios/DrinkScanAI/ML', exist_ok=True)
-          out = 'ios/DrinkScanAI/ML/DrinkClassifier.mlpackage'
-          mlmodel.save(out)
-          print(f'Saved: {out}')
+# ── Add metadata ─────────────────────────────────────────────────────────
+mlmodel.short_description = 'DrinkScanAI drink classifier — 56 categories'
+mlmodel.author  = 'DrinkScanAI'
+mlmodel.version = '1.0'
+mlmodel.user_defined_metadata['classes'] = json.dumps([
+    {'index': i, 'id': CLASS_IDS[i], 'name': CLASS_NAMES[i]}
+    for i in range(NUM_CLASSES)
+])
+mlmodel.user_defined_metadata['num_classes'] = str(NUM_CLASSES)
+mlmodel.user_defined_metadata['input_size']  = str(IMG_SIZE)
 
-          # Validate
-          dummy = Image.fromarray(np.random.randint(0,255,(IMG_SIZE,IMG_SIZE,3),dtype=np.uint8))
-          result = mlmodel.predict({'image': dummy})
-          logits = list(result['logits'][0])
-          top    = logits.index(max(logits))
-          print(f'Test prediction: {CLASS_NAMES[top]}')
-          print('Conversion complete!')
-          PYEOF
+# ── Save ─────────────────────────────────────────────────────────────────
+out_dir = 'ios/DrinkScanAI/ML'
+out_path = f'{out_dir}/DrinkClassifier.mlpackage'
+os.makedirs(out_dir, exist_ok=True)
+mlmodel.save(out_path)
+print(f'Saved: {out_path}')
+
+# ── Validate ─────────────────────────────────────────────────────────────
+print('Validating...')
+dummy_img = Image.fromarray(
+    np.random.randint(0, 255, (IMG_SIZE, IMG_SIZE, 3), dtype=np.uint8)
+)
+result = mlmodel.predict({'image': dummy_img})
+logits = list(result['logits'][0])
+top_i  = logits.index(max(logits))
+print(f'Test prediction: {CLASS_NAMES[top_i]}')
+print('Validation passed!')
+PYEOF
 
       - name: Commit model to repo
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add ios/DrinkScanAI/ML/DrinkClassifier.mlpackage
-          git status
           if git diff --staged --quiet; then
             echo "No changes to commit"
           else
-            git commit -m "feat: add CoreML drink classifier model (auto-generated)"
+            git commit -m "feat: add CoreML drink classifier (PyTorch direct conversion)"
             git push
           fi
