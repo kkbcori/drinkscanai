@@ -29,15 +29,29 @@ RCT_EXPORT_MODULE()
 - (void)loadModelIfNeeded {
   if (self.isLoaded) return;
 
-  NSURL *modelURL = [[NSBundle mainBundle] URLForResource:@"DrinkClassifier" withExtension:@"mlmodelc"]
-                 ?: [[NSBundle mainBundle] URLForResource:@"DrinkClassifier" withExtension:@"mlpackage"];
+  // Find .mlmodelc (pre-compiled) or .mlpackage (needs runtime compile)
+  NSURL *modelURL = [[NSBundle mainBundle] URLForResource:@"DrinkClassifier" withExtension:@"mlmodelc"];
 
   if (!modelURL) {
-    NSArray *files = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:[[NSBundle mainBundle] resourcePath] error:nil];
-    NSPredicate *p = [NSPredicate predicateWithFormat:@"self CONTAINS[c] 'ml' OR self CONTAINS[c] 'Drink'"];
-    self.loadError = [NSString stringWithFormat:@"Model not found. ML files: %@", [files filteredArrayUsingPredicate:p]];
-    NSLog(@"[DrinkClassifier] %@", self.loadError);
-    return;
+    // .mlpackage found — compile it at runtime to a temp location
+    NSURL *pkgURL = [[NSBundle mainBundle] URLForResource:@"DrinkClassifier" withExtension:@"mlpackage"];
+    if (!pkgURL) {
+      NSArray *files = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:[[NSBundle mainBundle] resourcePath] error:nil];
+      NSPredicate *p = [NSPredicate predicateWithFormat:@"self CONTAINS[c] 'ml' OR self CONTAINS[c] 'Drink'"];
+      self.loadError = [NSString stringWithFormat:@"Model not found. ML files: %@", [files filteredArrayUsingPredicate:p]];
+      NSLog(@"[DrinkClassifier] %@", self.loadError);
+      return;
+    }
+    NSLog(@"[DrinkClassifier] Compiling .mlpackage at runtime...");
+    NSError *compileErr;
+    NSURL *tmpDir = [NSURL fileURLWithPath:NSTemporaryDirectory()];
+    modelURL = [MLModel compileModelAtURL:pkgURL error:&compileErr];
+    if (!modelURL) {
+      self.loadError = [NSString stringWithFormat:@"Compile failed: %@", compileErr.localizedDescription];
+      NSLog(@"[DrinkClassifier] %@", self.loadError);
+      return;
+    }
+    NSLog(@"[DrinkClassifier] Compiled to: %@", modelURL.path);
   }
 
   NSError *err;
