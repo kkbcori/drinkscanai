@@ -4,14 +4,11 @@ require_relative '../node_modules/@react-native-community/cli-platform-ios/nativ
 platform :ios, '16.0'
 prepare_react_native_project!
 
-linkage = ENV['USE_FRAMEWORKS']
-if linkage != nil
-  Pod::UI.puts "Configuring Pod with #{linkage}ally linked Frameworks".green
-  use_frameworks! :linkage => linkage.to_sym
-end
-
 target 'DrinkScanAI' do
   config = use_native_modules!
+
+  # Local native modules pod — registers DrinkClassifier, FrameExtractor, VolumeEstimator
+  pod 'DrinkScanAIModules', :path => '../'
 
   use_react_native!(
     :path => config[:reactNativePath],
@@ -40,8 +37,5 @@ target 'DrinkScanAI' do
         config_file.attributes['CODE_SIGNING_REQUIRED'] = 'NO'
       end
     end
-
-    # Set bridging header only for the DrinkScanAI app target in project.pbxproj
-    # (done via scripts/patch_bridging_header.py — Pods project doesn't include app target)
   end
 end
