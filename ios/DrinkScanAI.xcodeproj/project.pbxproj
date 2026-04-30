@@ -7,6 +7,12 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		35DBC1711CE44C778A5DFB98 /* DrinkClassifier.mlpackage in Resources */ = {isa = PBXBuildFile; fileRef = 2DFED02E16334DF585C07EA7 /* DrinkClassifier.mlpackage */; };
+
+		D6F7ED9871F94682B6901A44 /* DrinkClassifierModule.m in Sources */ = {isa = PBXBuildFile; fileRef = 648B64C19E63492281591786 /* DrinkClassifierModule.m */; };
+
+		047775BD1B0B42C28AC4D839 /* DrinkClassifierModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0923027E8AF0438E8D7596BB /* DrinkClassifierModule.swift */; };
+
 		F201CD6DA70B4CF592FF6931 /* drink_classes.json in Resources */ = {isa = PBXBuildFile; fileRef = E77F1C0A8EC44F729C9AAB29 /* drink_classes.json */; };
 
 		36A31B09AF3B4365B327470E /* mobilenetv3_drinks.onnx in Resources */ = {isa = PBXBuildFile; fileRef = FBBA8662379F40FABF8A3EA3 /* mobilenetv3_drinks.onnx */; };
@@ -39,6 +45,12 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		2DFED02E16334DF585C07EA7 /* DrinkClassifier.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = wrapper.mlpackage; path = DrinkClassifier.mlpackage; sourceTree = "<group>"; };
+
+		648B64C19E63492281591786 /* DrinkClassifierModule.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = DrinkClassifierModule.m; sourceTree = "<group>"; };
+
+		0923027E8AF0438E8D7596BB /* DrinkClassifierModule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DrinkClassifierModule.swift; sourceTree = "<group>"; };
+
 		E77F1C0A8EC44F729C9AAB29 /* drink_classes.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = drink_classes.json; sourceTree = "<group>"; };
 
 		FBBA8662379F40FABF8A3EA3 /* mobilenetv3_drinks.onnx */ = {isa = PBXFileReference; lastKnownFileType = file; path = mobilenetv3_drinks.onnx; sourceTree = "<group>"; };
@@ -110,6 +122,8 @@
 		13B07FAE1A68108700A75B9A /* DrinkScanAI */ = {
 			isa = PBXGroup;
 			children = (
+				648B64C19E63492281591786 /* DrinkClassifierModule.m */,
+				0923027E8AF0438E8D7596BB /* DrinkClassifierModule.swift */,
 				E77F1C0A8EC44F729C9AAB29 /* drink_classes.json */,
 				FBBA8662379F40FABF8A3EA3 /* mobilenetv3_drinks.onnx */,
 				7B3C557F4A9E456AA3B7A4EA /* VolumeEstimatorModule.m */,
@@ -264,6 +278,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				35DBC1711CE44C778A5DFB98 /* DrinkClassifier.mlpackage in Resources */,
 				F201CD6DA70B4CF592FF6931 /* drink_classes.json in Resources */,
 				36A31B09AF3B4365B327470E /* mobilenetv3_drinks.onnx in Resources */,
 			);
@@ -416,6 +431,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D6F7ED9871F94682B6901A44 /* DrinkClassifierModule.m in Sources */,
+				047775BD1B0B42C28AC4D839 /* DrinkClassifierModule.swift in Sources */,
 				32E8A04F0280448C863C6930 /* VolumeEstimatorModule.m in Sources */,
 				BD0851FBC21541A881A5D0F1 /* VolumeEstimatorModule.swift in Sources */,
 				3D21E259A26F450B8ABDCDF3 /* FrameExtractorModule.m in Sources */,
