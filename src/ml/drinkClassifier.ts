@@ -1,11 +1,5 @@
 /**
- * drinkClassifier.ts
- * DrinkScanAI — Drink Classification via CoreML
- *
- * Calls DrinkClassifierModule.swift which runs the CoreML model
- * on the iPhone's Neural Engine (~8ms inference, fully on-device).
- *
- * Falls back to weighted heuristic if CoreML model not yet bundled.
+ * drinkClassifier.ts — with detailed diagnostics
  */
 
 import { NativeModules } from 'react-native'
@@ -13,41 +7,45 @@ import type { DrinkIdentification } from '../types'
 import { getDrinkInfo, getAllDrinkIds } from '../db/nutritionDB'
 
 const { DrinkClassifierModule } = NativeModules
-const MODEL_VERSION_COREML    = 'coreml_efficientnet_b0_v1'
+const MODEL_VERSION_COREML    = 'coreml_v1'
 const MODEL_VERSION_HEURISTIC = 'heuristic_v1'
 
-let coremlAvailable: boolean | null = null  // null = not yet checked
+let coremlAvailable: boolean | null = null
 
-// ── CoreML path ───────────────────────────────────────────────────────────
+// ── CoreML inference ──────────────────────────────────────────────────────
 
 async function runCoreMLInference(
   framePath: string
 ): Promise<Array<{ classId: string; probability: number }> | null> {
-  if (!DrinkClassifierModule?.classifyImage) return null
+  if (!DrinkClassifierModule?.classifyImage) {
+    console.warn('[DrinkClassifier] DrinkClassifierModule.classifyImage not found in NativeModules')
+    console.warn('[DrinkClassifier] Available modules:', Object.keys(NativeModules).join(', '))
+    return null
+  }
 
   try {
     const results: Array<{ classIndex: number; className: string; probability: number }>
       = await DrinkClassifierModule.classifyImage(framePath, 10)
 
-    if (!results || results.length === 0) return null
+    if (!results || results.length === 0) {
+      console.warn('[DrinkClassifier] CoreML returned empty results')
+      return null
+    }
 
     coremlAvailable = true
+    console.log('[DrinkClassifier] CoreML inference succeeded, top:', results[0]?.className)
 
-    // className from CoreML is the drink display name (e.g. "Black Coffee")
-    // We need to map it back to drinkId — search nutrition DB
     const allIds = getAllDrinkIds()
     return results.map(r => {
-      // Try exact name match first
       const byName = allIds.find(id => {
         const info = getDrinkInfo(id)
         return info.name.toLowerCase() === r.className.toLowerCase()
       })
-      // Fallback: use className directly as ID (works when class names = drink IDs)
       const classId = byName ?? r.className.toLowerCase().replace(/[^a-z0-9_]/g, '_')
       return { classId, probability: r.probability }
     })
-  } catch (e) {
-    console.warn('[DrinkClassifier] CoreML error:', e)
+  } catch (e: any) {
+    console.error('[DrinkClassifier] CoreML inference error:', e?.message ?? e)
     coremlAvailable = false
     return null
   }
@@ -98,29 +96,25 @@ function heuristicInference(): Array<{ classId: string; probability: number }> {
 async function runInference(
   framePath: string | null
 ): Promise<Array<{ classId: string; probability: number }>> {
-  // Try CoreML first (real model)
   if (framePath && coremlAvailable !== false) {
     const coremlResults = await runCoreMLInference(framePath)
     if (coremlResults && coremlResults.length > 0) return coremlResults
   }
-
-  // Fallback to weighted heuristic
   return heuristicInference()
 }
 
 // ── Public API ────────────────────────────────────────────────────────────
 
 export async function classifyDrink(framePath: string | null): Promise<DrinkIdentification> {
-  const results   = await runInference(framePath)
-  const top       = results[0]
-  const info      = getDrinkInfo(top.classId)
-  const isRealML  = coremlAvailable === true
+  const results  = await runInference(framePath)
+  const top      = results[0]
+  const info     = getDrinkInfo(top.classId)
   return {
     drinkId:      top.classId,
     drinkName:    info.name,
     category:     info.category as any,
     confidence:   top.probability,
-    modelVersion: isRealML ? MODEL_VERSION_COREML : MODEL_VERSION_HEURISTIC,
+    modelVersion: coremlAvailable === true ? MODEL_VERSION_COREML : MODEL_VERSION_HEURISTIC,
   }
 }
 
@@ -136,27 +130,31 @@ export async function getTopCandidates(
       drinkName:    info.name,
       category:     info.category as any,
       confidence:   r.probability,
-      modelVersion: coremlAvailable ? MODEL_VERSION_COREML : MODEL_VERSION_HEURISTIC,
+      modelVersion: coremlAvailable === true ? MODEL_VERSION_COREML : MODEL_VERSION_HEURISTIC,
     }
   })
 }
 
 export async function preloadModel(): Promise<void> {
   if (!DrinkClassifierModule?.preloadModel) {
-    console.log('[DrinkClassifier] CoreML module not available, using heuristic fallback')
+    console.warn('[DrinkClassifier] DrinkClassifierModule not in NativeModules')
+    console.warn('[DrinkClassifier] Available:', Object.keys(NativeModules).join(', '))
     coremlAvailable = false
     return
   }
+
   try {
+    console.log('[DrinkClassifier] Preloading CoreML model...')
     const result = await DrinkClassifierModule.preloadModel()
+    console.log('[DrinkClassifier] Preload result:', JSON.stringify(result))
     coremlAvailable = result?.loaded === true
     if (coremlAvailable) {
-      console.log(`[DrinkClassifier] CoreML ready ✓ (${result.classes} classes)`)
+      console.log(`[DrinkClassifier] CoreML ready — ${result.classes} classes`)
     } else {
-      console.warn('[DrinkClassifier] CoreML load failed:', result?.error)
+      console.warn('[DrinkClassifier] CoreML failed to load:', result?.error)
     }
-  } catch (e) {
-    console.warn('[DrinkClassifier] Preload failed:', e)
+  } catch (e: any) {
+    console.error('[DrinkClassifier] Preload exception:', e?.message ?? e)
     coremlAvailable = false
   }
 }
