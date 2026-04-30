@@ -1,314 +1,310 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react'
 import {
-  View, Text, TouchableOpacity, StyleSheet,
-  ActivityIndicator, Alert, ScrollView, Modal,
+  View, Text, TouchableOpacity, StyleSheet, ActivityIndicator,
+  Alert, ScrollView, Modal, Animated, Easing,
 } from 'react-native'
 import { Camera, useCameraDevice, useCameraPermission } from 'react-native-vision-camera'
-import type { ScanResult } from '../types'
-import { extractBestFrame } from '../ml/frameExtractor'
-import { classifyDrink, getTopCandidates, preloadModel, isUsingRealML } from '../ml/drinkClassifier'
+import { C, CATEGORY_COLOR, CATEGORY_EMOJI } from '../theme'
+import { classifyDrink, getTopCandidates, isUsingRealML } from '../ml/drinkClassifier'
 import { estimateVolume } from '../ar/volumeEstimator'
 import { calculateNutrition, getDrinkName, getAllDrinkIds, getDrinkInfo } from '../db/nutritionDB'
 import { saveScan, confirmScan, updateCorrection, generateScanId } from '../db/historyDB'
+import type { ScanResult } from '../types'
 
-type ScanState = 'idle' | 'recording' | 'analyzing' | 'result'
+type State = 'idle'|'recording'|'analyzing'|'result'
 
-const ANALYSIS_STEPS = [
-  '🎞️  Extracting best frame...',
-  '🔍 Identifying drink type...',
-  '📐 Measuring cup volume...',
-  '🧮 Calculating nutrition...',
-]
+const STEPS = ['Extracting frame','Identifying drink','Measuring volume','Calculating nutrition']
 
 export default function ScanScreen() {
-  const [scanState, setScanState]       = useState<ScanState>('idle')
-  const [countdown, setCountdown]       = useState(5)
-  const [analysisStep, setAnalysisStep] = useState(0)
-  const [result, setResult]             = useState<ScanResult | null>(null)
-  const [showCorrection, setShowCorrection] = useState(false)
+  const [state, setState]           = useState<State>('idle')
+  const [countdown, setCountdown]   = useState(5)
+  const [step, setStep]             = useState(0)
+  const [result, setResult]         = useState<ScanResult|null>(null)
+  const [showCorrect, setShowCorrect] = useState(false)
+  const [saved, setSaved]           = useState(false)
 
-  const cameraRef      = useRef<Camera>(null)
-  const countdownRef   = useRef<ReturnType<typeof setInterval> | null>(null)
+  const cameraRef   = useRef<Camera>(null)
+  const timerRef    = useRef<ReturnType<typeof setInterval>|null>(null)
+  const pulseAnim   = useRef(new Animated.Value(1)).current
+  const fadeAnim    = useRef(new Animated.Value(0)).current
+  const slideAnim   = useRef(new Animated.Value(60)).current
+  const ringAnim    = useRef(new Animated.Value(0)).current
 
   const { hasPermission, requestPermission } = useCameraPermission()
   const device = useCameraDevice('back')
 
+  // Pulse animation for scan button
   useEffect(() => {
-    // Preload ONNX model on mount to eliminate first-scan delay
-    preloadModel().catch(() => {})
-  }, [])
+    if (state !== 'idle') return
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, { toValue:1.08, duration:1000, useNativeDriver:true, easing:Easing.inOut(Easing.ease) }),
+        Animated.timing(pulseAnim, { toValue:1, duration:1000, useNativeDriver:true, easing:Easing.inOut(Easing.ease) }),
+      ])
+    ).start()
+  }, [state])
+
+  // Animate result card in
+  useEffect(() => {
+    if (state === 'result') {
+      Animated.parallel([
+        Animated.timing(fadeAnim, { toValue:1, duration:500, useNativeDriver:true }),
+        Animated.spring(slideAnim, { toValue:0, useNativeDriver:true, tension:80, friction:10 }),
+      ]).start()
+      // Ring fill animation
+      Animated.timing(ringAnim, { toValue:1, duration:1000, delay:300, useNativeDriver:false, easing:Easing.out(Easing.cubic) }).start()
+    } else {
+      fadeAnim.setValue(0)
+      slideAnim.setValue(60)
+      ringAnim.setValue(0)
+    }
+  }, [state])
 
   const startScan = useCallback(async () => {
-    if (!hasPermission) {
-      const granted = await requestPermission()
-      if (!granted) return
-    }
+    if (!hasPermission) { const g = await requestPermission(); if(!g) return }
     if (!cameraRef.current || !device) return
 
-    setScanState('recording')
+    setState('recording')
     setResult(null)
-
-    // Start countdown
+    setSaved(false)
     let count = 5
     setCountdown(count)
-    countdownRef.current = setInterval(() => {
+    timerRef.current = setInterval(() => {
       count -= 1
       setCountdown(count)
-      if (count <= 0 && countdownRef.current) clearInterval(countdownRef.current)
+      if (count <= 0 && timerRef.current) clearInterval(timerRef.current)
     }, 1000)
 
     try {
       await cameraRef.current.startRecording({
         onRecordingFinished: async (video) => {
-          setScanState('analyzing')
-          setAnalysisStep(0)
-
+          setState('analyzing')
           try {
-            // Step 1: Extract best frame
-            setAnalysisStep(0)
-            const framePath = await extractBestFrame(video.path)
-
-            // Step 2: Classify drink (uses framePath if available, else video path)
-            setAnalysisStep(1)
-            const [identification, topCandidates] = await Promise.all([
-              classifyDrink(framePath ?? video.path),
-              getTopCandidates(framePath ?? video.path, 5),
-            ])
-
-            // Step 3: Estimate volume
-            setAnalysisStep(2)
+            setStep(0)
+            setStep(1)
+            const [identification] = await Promise.all([classifyDrink(video.path)])
+            setStep(2)
             const volume = await estimateVolume(video.path)
-
-            // Step 4: Calculate nutrition
-            setAnalysisStep(3)
-            const nutrition = calculateNutrition(
-              identification.drinkId,
-              volume.liquidVolumeMl
-            )
-
-            const scanResult: ScanResult = {
-              scanId:        generateScanId(),
-              timestamp:     new Date().toISOString(),
-              identification,
-              volume,
-              nutrition,
-              userConfirmed: false,
-              syncedToCloud: false,
+            setStep(3)
+            const nutrition = calculateNutrition(identification.drinkId, volume.liquidVolumeMl)
+            const scan: ScanResult = {
+              scanId: generateScanId(),
+              timestamp: new Date().toISOString(),
+              identification, volume, nutrition,
+              userConfirmed: false, syncedToCloud: false,
             }
-
-            saveScan(scanResult)
-            setResult(scanResult)
-            setScanState('result')
-
-          } catch (e) {
-            console.error('Analysis error:', e)
-            Alert.alert('Analysis Failed', 'Could not analyze the drink. Please try again.')
-            setScanState('idle')
+            // Save immediately on scan
+            const saved = saveScan(scan)
+            console.log('[Scan] Auto-saved:', saved)
+            setResult(scan)
+            setState('result')
+          } catch(e) {
+            console.error('[Scan] Analysis error:', e)
+            Alert.alert('Scan Failed', 'Could not analyse drink. Please try again.')
+            setState('idle')
           }
         },
-        onRecordingError: (error: any) => {
-          console.error('Recording error:', error)
-          setScanState('idle')
-        },
+        onRecordingError: (e:any) => { console.error(e); setState('idle') },
       })
-
-      setTimeout(async () => {
-        try { await cameraRef.current?.stopRecording() } catch (e) {}
-      }, 5000)
-
-    } catch (e) {
-      console.error('Start error:', e)
-      setScanState('idle')
-    }
+      setTimeout(async () => { try { await cameraRef.current?.stopRecording() } catch(e){} }, 5000)
+    } catch(e) { console.error(e); setState('idle') }
   }, [hasPermission, device, requestPermission])
 
-  const handleConfirm = useCallback(() => {
+  const handleSave = useCallback(() => {
     if (!result) return
     confirmScan(result.scanId)
-    Alert.alert('✅ Saved', 'Scan saved to history.')
-    setScanState('idle')
-    setResult(null)
+    setSaved(true)
+    Alert.alert('✅ Saved!', `${result.identification.drinkName} added to your log.`)
   }, [result])
 
   const handleCorrect = useCallback((drinkId: string) => {
     if (!result) return
-    updateCorrection(result.scanId, getDrinkName(drinkId))
+    const name = getDrinkName(drinkId)
+    updateCorrection(result.scanId, name)
     const info = getDrinkInfo(drinkId)
     const nutrition = calculateNutrition(drinkId, result.volume.liquidVolumeMl)
-    setResult({
-      ...result,
-      identification: { ...result.identification, drinkId, drinkName: info.name, category: info.category as any },
-      nutrition,
-      userCorrection: info.name,
+    setResult({ ...result,
+      identification: { ...result.identification, drinkId, drinkName: name, category: info.category as any },
+      nutrition, userCorrection: name,
     })
-    setShowCorrection(false)
+    setShowCorrect(false)
   }, [result])
 
-  const reset = useCallback(() => {
-    setScanState('idle')
-    setResult(null)
-    setCountdown(5)
-    setAnalysisStep(0)
-  }, [])
+  const reset = () => { setState('idle'); setResult(null); setSaved(false) }
 
-  if (!hasPermission) {
-    return (
-      <View style={s.centered}>
-        <Text style={s.permIcon}>📷</Text>
-        <Text style={s.permTitle}>Camera Access Required</Text>
-        <Text style={s.permSub}>DrinkScanAI needs camera access to scan your drink</Text>
-        <TouchableOpacity style={s.btn} onPress={requestPermission}>
-          <Text style={s.btnTxt}>Allow Camera</Text>
-        </TouchableOpacity>
-      </View>
-    )
-  }
+  if (!hasPermission) return (
+    <View style={s.perm}>
+      <Text style={s.permEmoji}>📷</Text>
+      <Text style={s.permTitle}>Camera Access Needed</Text>
+      <Text style={s.permSub}>DrinkScanAI needs your camera to scan drinks</Text>
+      <TouchableOpacity style={s.permBtn} onPress={requestPermission}>
+        <Text style={s.permBtnTxt}>Allow Camera</Text>
+      </TouchableOpacity>
+    </View>
+  )
 
-  if (!device) {
-    return (
-      <View style={s.centered}>
-        <Text style={s.permIcon}>⚠️</Text>
-        <Text style={s.permTitle}>Camera Not Available</Text>
-      </View>
-    )
-  }
+  if (!device) return (
+    <View style={s.perm}>
+      <Text style={s.permEmoji}>⚠️</Text>
+      <Text style={s.permTitle}>Camera Unavailable</Text>
+    </View>
+  )
+
+  const catColor = result ? (CATEGORY_COLOR[result.identification.category] ?? C.teal) : C.teal
 
   return (
-    <View style={s.container}>
-      <Camera
-        ref={cameraRef}
-        style={StyleSheet.absoluteFill}
-        device={device}
-        isActive={scanState === 'idle' || scanState === 'recording'}
-        video={true}
-        audio={false}
-      />
+    <View style={s.root}>
+      <Camera ref={cameraRef} style={StyleSheet.absoluteFill} device={device}
+        isActive={state==='idle'||state==='recording'} video audio={false} />
 
-      {scanState === 'analyzing' && <View style={s.darkOverlay} />}
+      {/* Dark overlay for non-camera states */}
+      {(state==='analyzing'||state==='result') && <View style={s.overlay} />}
 
       {/* Frame guide */}
-      {(scanState === 'idle' || scanState === 'recording') && (
+      {(state==='idle'||state==='recording') && (
         <View style={s.frameWrap}>
           <View style={s.frame}>
-            <View style={[s.corner, s.tl]} />
-            <View style={[s.corner, s.tr]} />
-            <View style={[s.corner, s.bl]} />
-            <View style={[s.corner, s.br]} />
-            {scanState === 'recording' && (
-              <Text style={s.countdown}>{countdown}</Text>
+            <View style={[s.corner,s.tl]} /><View style={[s.corner,s.tr]} />
+            <View style={[s.corner,s.bl]} /><View style={[s.corner,s.br]} />
+            {state==='recording' && (
+              <View style={s.countdownWrap}>
+                <Text style={s.countdownNum}>{countdown}</Text>
+              </View>
             )}
           </View>
-          <View style={s.hintBox}>
-            <Text style={s.hint}>
-              {scanState === 'idle'
-                ? 'Center the cup — tap button to start'
-                : `Scanning... hold steady (${countdown}s)`}
+          <View style={s.hintPill}>
+            <Text style={s.hintTxt}>
+              {state==='idle' ? '🍹  Hold cup steady, tap to scan' : `📹  Recording — ${countdown}s remaining`}
             </Text>
           </View>
         </View>
       )}
 
-      {/* Analysis progress */}
-      {scanState === 'analyzing' && (
+      {/* Analyzing */}
+      {state==='analyzing' && (
         <View style={s.analyzingWrap}>
-          <ActivityIndicator size="large" color="#fff" />
-          <Text style={s.analyzingTitle}>Analyzing drink...</Text>
-          {ANALYSIS_STEPS.map((step, i) => (
-            <Text key={i} style={[s.analysisStep, i === analysisStep && s.analysisStepActive]}>
-              {i < analysisStep ? '✓ ' : i === analysisStep ? '▶ ' : '  '}
-              {step.replace(/^[^\s]+ /, '')}
-            </Text>
+          <ActivityIndicator size="large" color={C.teal} />
+          <Text style={s.analyzingTitle}>Analysing your drink</Text>
+          {STEPS.map((st,i) => (
+            <View key={i} style={s.stepRow}>
+              <Text style={[s.stepDot, i<=step && {color:C.teal}]}>
+                {i<step?'✓':i===step?'▶':'○'}
+              </Text>
+              <Text style={[s.stepTxt, i===step && {color:C.text1, fontWeight:'700'}]}>{st}</Text>
+            </View>
           ))}
         </View>
       )}
 
       {/* Result */}
-      {scanState === 'result' && result && (
-        <ScrollView style={s.resultScroll} contentContainerStyle={s.resultContent}>
-          <View style={s.resultHeader}>
-            <Text style={s.resultDrink}>{result.identification.drinkName}</Text>
-            <View style={[s.badge,
-              { backgroundColor: result.identification.confidence > 0.75 ? '#E8F5E9' : '#FFF3E0' }]}>
-              <Text style={[s.badgeTxt,
-                { color: result.identification.confidence > 0.75 ? '#2E7D32' : '#E65100' }]}>
-                {Math.round(result.identification.confidence * 100)}% confidence
+      {state==='result' && result && (
+        <Animated.View style={[s.resultWrap, {opacity:fadeAnim, transform:[{translateY:slideAnim}]}]}>
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.resultScroll}>
+            {/* Drink header */}
+            <View style={[s.drinkHeader, {borderColor: catColor+'40'}]}>
+              <Text style={s.drinkEmoji}>{CATEGORY_EMOJI[result.identification.category]??'🥤'}</Text>
+              <View style={{flex:1}}>
+                <Text style={s.drinkName}>{result.identification.drinkName}</Text>
+                <View style={s.badgeRow}>
+                  <View style={[s.badge, {backgroundColor: catColor+'25', borderColor: catColor+'60'}]}>
+                    <Text style={[s.badgeTxt,{color:catColor}]}>
+                      {Math.round(result.identification.confidence*100)}% match
+                    </Text>
+                  </View>
+                  <View style={[s.badge, {backgroundColor: isUsingRealML()?C.tealSoft:C.goldSoft, borderColor: isUsingRealML()?C.teal+'50':C.gold+'50'}]}>
+                    <Text style={[s.badgeTxt, {color: isUsingRealML()?C.teal:C.gold}]}>
+                      {isUsingRealML()?'🧠 CoreML':'⚡ Smart'}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            </View>
+
+            {/* Big calorie number */}
+            <View style={s.calCard}>
+              <Text style={s.calLabel}>CALORIES</Text>
+              <Text style={s.calNum}>{result.nutrition.calories}</Text>
+              <Text style={s.calSub}>kcal in {result.volume.liquidVolumeMl}ml</Text>
+            </View>
+
+            {/* Stats grid */}
+            <View style={s.statsGrid}>
+              <StatBox label="Volume" value={`${result.volume.liquidVolumeMl}`} unit="ml" color={C.water} />
+              <StatBox label="Caffeine" value={`${Math.round(result.nutrition.caffeineGrams*1000)}`} unit="mg" color={C.purple} />
+              <StatBox label="Sugar" value={`${result.nutrition.sugarGrams}`} unit="g" color={C.orange} />
+              <StatBox label="Carbs" value={`${result.nutrition.carbsGrams}`} unit="g" color={C.gold} />
+              <StatBox label="Protein" value={`${result.nutrition.proteinGrams}`} unit="g" color={C.green} />
+              <StatBox label="Fat" value={`${result.nutrition.fatGrams}`} unit="g" color={C.text2} />
+            </View>
+
+            {/* Volume bar */}
+            <View style={s.volCard}>
+              <View style={s.volRow}>
+                <Text style={s.volLbl}>Fill level</Text>
+                <Text style={s.volPct}>{result.volume.fillLevelPct}%</Text>
+              </View>
+              <View style={s.volTrack}>
+                <Animated.View style={[s.volFill, {
+                  width: ringAnim.interpolate({inputRange:[0,1],outputRange:['0%',`${result.volume.fillLevelPct}%`]}),
+                  backgroundColor: catColor,
+                }]} />
+              </View>
+              <Text style={s.volSub}>
+                {result.volume.totalVolumeMl}ml cup · {result.volume.method==='vision_pod'?'Vision measured':'Estimated'}
               </Text>
             </View>
-            <Text style={s.methodTxt}>
-              {result.volume.method === 'vision' ? '📐 Vision measured' : '📐 Size estimated'}
-              {' · '}
-              {isUsingRealML() ? '🧠 CoreML Neural Engine' : '⚠️ Heuristic (CoreML model pending)'}
-            </Text>
-          </View>
 
-          <Card title="📐 Volume">
-            <Row>
-              <Stat label="Cup Size"   value={`${result.volume.totalVolumeMl}ml`} />
-              <Stat label="Fill Level" value={`${result.volume.fillLevelPct}%`} />
-              <Stat label="Liquid"     value={`${result.volume.liquidVolumeMl}ml`} color="#007AFF" />
-            </Row>
-          </Card>
-
-          <Card title="🔥 Calories & Caffeine">
-            <Row>
-              <Stat label="Calories" value={`${result.nutrition.calories}`}                                color="#FF6B35" />
-              <Stat label="Caffeine" value={`${Math.round(result.nutrition.caffeineGrams * 1000)}mg`}     color="#6B35FF" />
-              <Stat label="Sugar"    value={`${result.nutrition.sugarGrams}g`} />
-            </Row>
-          </Card>
-
-          <Card title="🧮 Macros">
-            <Row>
-              <Stat label="Carbs"   value={`${result.nutrition.carbsGrams}g`} />
-              <Stat label="Protein" value={`${result.nutrition.proteinGrams}g`} />
-              <Stat label="Fat"     value={`${result.nutrition.fatGrams}g`} />
-            </Row>
-          </Card>
-
-          <TouchableOpacity style={s.confirmBtn} onPress={handleConfirm}>
-            <Text style={s.confirmBtnTxt}>✅ Confirm & Save</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={s.correctBtn} onPress={() => setShowCorrection(true)}>
-            <Text style={s.correctBtnTxt}>✏️ Wrong drink? Correct it</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={s.retryBtn} onPress={reset}>
-            <Text style={s.retryBtnTxt}>🔄 Scan Again</Text>
-          </TouchableOpacity>
-        </ScrollView>
+            {/* Actions */}
+            <TouchableOpacity style={[s.saveBtn, saved && s.savedBtn]} onPress={handleSave} disabled={saved}>
+              <Text style={s.saveBtnTxt}>{saved ? '✅ Saved to Log' : '💾 Save to Log'}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={s.correctBtn} onPress={() => setShowCorrect(true)}>
+              <Text style={s.correctBtnTxt}>✏️  Wrong drink? Correct it</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={s.retryBtn} onPress={reset}>
+              <Text style={s.retryBtnTxt}>🔄  Scan another drink</Text>
+            </TouchableOpacity>
+          </ScrollView>
+        </Animated.View>
       )}
 
       {/* Scan button */}
-      {scanState === 'idle' && (
-        <View style={s.scanBtnWrap}>
-          <TouchableOpacity style={s.scanBtn} onPress={startScan}>
-            <View style={s.scanBtnInner} />
-          </TouchableOpacity>
+      {state==='idle' && (
+        <View style={s.scanWrap}>
+          <Animated.View style={{transform:[{scale:pulseAnim}]}}>
+            <TouchableOpacity style={s.scanBtn} onPress={startScan} activeOpacity={0.8}>
+              <View style={s.scanRing}>
+                <Text style={s.scanIcon}>⬤</Text>
+              </View>
+            </TouchableOpacity>
+          </Animated.View>
           <Text style={s.scanHint}>Tap to record 5-second scan</Text>
         </View>
       )}
 
       {/* Correction modal */}
-      <Modal visible={showCorrection} animationType="slide" presentationStyle="pageSheet">
+      <Modal visible={showCorrect} animationType="slide" presentationStyle="pageSheet">
         <View style={s.modal}>
           <Text style={s.modalTitle}>What drink is this?</Text>
-          <Text style={s.modalSub}>Your correction trains the model to be smarter</Text>
+          <Text style={s.modalSub}>Corrections improve the AI model over time</Text>
           <ScrollView>
-            {getAllDrinkIds().filter(id => id !== 'unknown').map(drinkId => {
-              const info = getDrinkInfo(drinkId)
+            {getAllDrinkIds().filter(id=>id!=='unknown').map(id => {
+              const info = getDrinkInfo(id)
+              const col = CATEGORY_COLOR[info.category] ?? C.teal
               return (
-                <TouchableOpacity
-                  key={drinkId}
-                  style={[s.drinkRow, result?.identification.drinkId === drinkId && s.drinkRowSelected]}
-                  onPress={() => handleCorrect(drinkId)}
-                >
-                  <Text style={s.drinkRowName}>{info.name}</Text>
-                  <Text style={s.drinkRowCal}>{info.caloriesPer100ml} cal/100ml</Text>
+                <TouchableOpacity key={id} style={[s.drinkOption, result?.identification.drinkId===id && {borderColor:col, borderWidth:1.5}]} onPress={()=>handleCorrect(id)}>
+                  <Text style={s.drinkOptEmoji}>{CATEGORY_EMOJI[info.category]??'🥤'}</Text>
+                  <View style={{flex:1}}>
+                    <Text style={s.drinkOptName}>{info.name}</Text>
+                    <Text style={s.drinkOptCal}>{info.caloriesPer100ml} cal/100ml</Text>
+                  </View>
+                  {result?.identification.drinkId===id && <Text style={[s.drinkOptCheck,{color:col}]}>✓</Text>}
                 </TouchableOpacity>
               )
             })}
           </ScrollView>
-          <TouchableOpacity style={s.modalCancel} onPress={() => setShowCorrection(false)}>
-            <Text style={s.modalCancelTxt}>Cancel</Text>
+          <TouchableOpacity style={s.modalClose} onPress={()=>setShowCorrect(false)}>
+            <Text style={s.modalCloseTxt}>Cancel</Text>
           </TouchableOpacity>
         </View>
       </Modal>
@@ -316,82 +312,87 @@ export default function ScanScreen() {
   )
 }
 
-// Sub-components
-function Card({ title, children }: { title: string; children: React.ReactNode }) {
+function StatBox({label,value,unit,color}:{label:string,value:string,unit:string,color:string}) {
   return (
-    <View style={s.card}>
-      <Text style={s.cardTitle}>{title}</Text>
-      {children}
+    <View style={[sb.box,{borderColor:color+'30'}]}>
+      <Text style={[sb.val,{color}]}>{value}</Text>
+      <Text style={sb.unit}>{unit}</Text>
+      <Text style={sb.lbl}>{label}</Text>
     </View>
   )
 }
-
-function Row({ children }: { children: React.ReactNode }) {
-  return <View style={s.row}>{children}</View>
-}
-
-function Stat({ label, value, color = '#1a1a1a' }: { label: string; value: string; color?: string }) {
-  return (
-    <View style={s.stat}>
-      <Text style={[s.statVal, { color }]}>{value}</Text>
-      <Text style={s.statLbl}>{label}</Text>
-    </View>
-  )
-}
+const sb = StyleSheet.create({
+  box:  {width:'30%',aspectRatio:1,backgroundColor:C.bg2,borderRadius:16,borderWidth:1,alignItems:'center',justifyContent:'center',marginBottom:12},
+  val:  {fontSize:22,fontWeight:'800'},
+  unit: {fontSize:11,color:C.text3,marginTop:-2},
+  lbl:  {fontSize:10,color:C.text2,marginTop:4,textTransform:'uppercase',letterSpacing:0.5},
+})
 
 const s = StyleSheet.create({
-  container:       { flex: 1, backgroundColor: '#000' },
-  centered:        { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32, backgroundColor: '#f5f5f5' },
-  permIcon:        { fontSize: 64, marginBottom: 16 },
-  permTitle:       { fontSize: 22, fontWeight: '700', color: '#1a1a1a', marginBottom: 8, textAlign: 'center' },
-  permSub:         { fontSize: 15, color: '#666', marginBottom: 32, textAlign: 'center', lineHeight: 22 },
-  btn:             { backgroundColor: '#007AFF', paddingVertical: 14, paddingHorizontal: 40, borderRadius: 12 },
-  btnTxt:          { color: '#fff', fontSize: 17, fontWeight: '600' },
-  darkOverlay:     { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.88)' },
-  frameWrap:       { flex: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: 130 },
-  frame:           { width: 260, height: 340, alignItems: 'center', justifyContent: 'center' },
-  corner:          { position: 'absolute', width: 32, height: 32, borderColor: '#fff', borderWidth: 3 },
-  tl:              { top: 0, left: 0, borderRightWidth: 0, borderBottomWidth: 0 },
-  tr:              { top: 0, right: 0, borderLeftWidth: 0, borderBottomWidth: 0 },
-  bl:              { bottom: 0, left: 0, borderRightWidth: 0, borderTopWidth: 0 },
-  br:              { bottom: 0, right: 0, borderLeftWidth: 0, borderTopWidth: 0 },
-  countdown:       { fontSize: 80, fontWeight: '800', color: '#fff', textShadowColor: 'rgba(0,0,0,0.6)', textShadowOffset: { width: 0, height: 2 }, textShadowRadius: 6 },
-  hintBox:         { backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 20, paddingHorizontal: 18, paddingVertical: 9, marginTop: 20 },
-  hint:            { color: '#fff', fontSize: 14, textAlign: 'center' },
-  analyzingWrap:   { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 },
-  analyzingTitle:  { color: '#fff', fontSize: 20, fontWeight: '700', marginTop: 20, marginBottom: 20 },
-  analysisStep:    { color: 'rgba(255,255,255,0.5)', fontSize: 14, marginBottom: 8 },
-  analysisStepActive: { color: '#fff', fontWeight: '600' },
-  resultScroll:    { flex: 1 },
-  resultContent:   { padding: 16, paddingBottom: 40 },
-  resultHeader:    { alignItems: 'center', marginBottom: 14, marginTop: 8 },
-  resultDrink:     { fontSize: 26, fontWeight: '800', color: '#fff', textAlign: 'center', marginBottom: 8 },
-  badge:           { paddingHorizontal: 14, paddingVertical: 5, borderRadius: 20, marginBottom: 4 },
-  badgeTxt:        { fontSize: 13, fontWeight: '600' },
-  methodTxt:       { color: 'rgba(255,255,255,0.5)', fontSize: 11, marginTop: 2 },
-  card:            { backgroundColor: 'rgba(255,255,255,0.95)', borderRadius: 16, padding: 16, marginBottom: 10 },
-  cardTitle:       { fontSize: 14, fontWeight: '700', color: '#555', marginBottom: 12 },
-  row:             { flexDirection: 'row', justifyContent: 'space-around' },
-  stat:            { alignItems: 'center', minWidth: 72 },
-  statVal:         { fontSize: 20, fontWeight: '700' },
-  statLbl:         { fontSize: 11, color: '#888', marginTop: 2 },
-  confirmBtn:      { backgroundColor: '#34C759', borderRadius: 14, padding: 16, alignItems: 'center', marginBottom: 10 },
-  confirmBtnTxt:   { color: '#fff', fontSize: 17, fontWeight: '700' },
-  correctBtn:      { backgroundColor: 'rgba(255,255,255,0.12)', borderRadius: 14, padding: 14, alignItems: 'center', marginBottom: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.25)' },
-  correctBtnTxt:   { color: '#fff', fontSize: 15, fontWeight: '600' },
-  retryBtn:        { alignItems: 'center', padding: 12 },
-  retryBtnTxt:     { color: 'rgba(255,255,255,0.6)', fontSize: 14 },
-  scanBtnWrap:     { position: 'absolute', bottom: 48, left: 0, right: 0, alignItems: 'center' },
-  scanBtn:         { width: 80, height: 80, borderRadius: 40, borderWidth: 4, borderColor: '#fff', alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
-  scanBtnInner:    { width: 64, height: 64, borderRadius: 32, backgroundColor: '#fff' },
-  scanHint:        { color: 'rgba(255,255,255,0.75)', fontSize: 13 },
-  modal:           { flex: 1, backgroundColor: '#f5f5f5', padding: 24 },
-  modalTitle:      { fontSize: 22, fontWeight: '700', color: '#1a1a1a', marginBottom: 6 },
-  modalSub:        { fontSize: 13, color: '#888', marginBottom: 20 },
-  drinkRow:        { backgroundColor: '#fff', borderRadius: 12, padding: 14, marginBottom: 8, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  drinkRowSelected:{ borderColor: '#007AFF', borderWidth: 2 },
-  drinkRowName:    { fontSize: 16, color: '#1a1a1a', fontWeight: '500' },
-  drinkRowCal:     { fontSize: 13, color: '#888' },
-  modalCancel:     { backgroundColor: '#FF3B30', borderRadius: 14, padding: 16, alignItems: 'center', marginTop: 16 },
-  modalCancelTxt:  { color: '#fff', fontSize: 17, fontWeight: '600' },
+  root:          {flex:1,backgroundColor:C.bg0},
+  overlay:       {...StyleSheet.absoluteFillObject,backgroundColor:'rgba(7,11,20,0.92)'},
+  perm:          {flex:1,backgroundColor:C.bg1,alignItems:'center',justifyContent:'center',padding:32},
+  permEmoji:     {fontSize:64,marginBottom:16},
+  permTitle:     {fontSize:22,fontWeight:'800',color:C.text1,marginBottom:8,textAlign:'center'},
+  permSub:       {fontSize:15,color:C.text2,marginBottom:32,textAlign:'center',lineHeight:22},
+  permBtn:       {backgroundColor:C.teal,paddingVertical:14,paddingHorizontal:40,borderRadius:14},
+  permBtnTxt:    {color:C.bg0,fontSize:17,fontWeight:'800'},
+  frameWrap:     {flex:1,alignItems:'center',justifyContent:'center',paddingBottom:140},
+  frame:         {width:240,height:320,alignItems:'center',justifyContent:'center'},
+  corner:        {position:'absolute',width:28,height:28,borderColor:C.teal,borderWidth:2.5},
+  tl:            {top:0,left:0,borderRightWidth:0,borderBottomWidth:0,borderTopLeftRadius:4},
+  tr:            {top:0,right:0,borderLeftWidth:0,borderBottomWidth:0,borderTopRightRadius:4},
+  bl:            {bottom:0,left:0,borderRightWidth:0,borderTopWidth:0,borderBottomLeftRadius:4},
+  br:            {bottom:0,right:0,borderLeftWidth:0,borderTopWidth:0,borderBottomRightRadius:4},
+  countdownWrap: {backgroundColor:'rgba(0,229,204,0.15)',borderRadius:40,padding:16},
+  countdownNum:  {fontSize:72,fontWeight:'900',color:C.teal,lineHeight:80},
+  hintPill:      {backgroundColor:'rgba(13,20,37,0.85)',borderRadius:30,paddingHorizontal:20,paddingVertical:10,marginTop:20,borderWidth:1,borderColor:C.border},
+  hintTxt:       {color:C.text1,fontSize:14},
+  analyzingWrap: {flex:1,alignItems:'center',justifyContent:'center',padding:40},
+  analyzingTitle:{color:C.text1,fontSize:20,fontWeight:'700',marginTop:20,marginBottom:28},
+  stepRow:       {flexDirection:'row',alignItems:'center',marginBottom:10,width:'100%'},
+  stepDot:       {color:C.text3,fontSize:14,width:24},
+  stepTxt:       {color:C.text2,fontSize:14,flex:1},
+  resultWrap:    {flex:1},
+  resultScroll:  {padding:20,paddingBottom:48},
+  drinkHeader:   {flexDirection:'row',alignItems:'center',gap:14,backgroundColor:C.bg2,borderRadius:20,padding:18,marginBottom:12,borderWidth:1},
+  drinkEmoji:    {fontSize:40},
+  drinkName:     {fontSize:22,fontWeight:'800',color:C.text1,marginBottom:8},
+  badgeRow:      {flexDirection:'row',gap:8},
+  badge:         {paddingHorizontal:10,paddingVertical:4,borderRadius:20,borderWidth:1},
+  badgeTxt:      {fontSize:11,fontWeight:'700'},
+  calCard:       {backgroundColor:C.bg2,borderRadius:20,padding:24,alignItems:'center',marginBottom:12,borderWidth:1,borderColor:C.gold+'25'},
+  calLabel:      {fontSize:11,color:C.gold,fontWeight:'700',letterSpacing:2,marginBottom:4},
+  calNum:        {fontSize:72,fontWeight:'900',color:C.gold,lineHeight:76},
+  calSub:        {fontSize:13,color:C.text2,marginTop:4},
+  statsGrid:     {flexDirection:'row',flexWrap:'wrap',justifyContent:'space-between',marginBottom:4},
+  volCard:       {backgroundColor:C.bg2,borderRadius:16,padding:18,marginBottom:12,borderWidth:1,borderColor:C.border},
+  volRow:        {flexDirection:'row',justifyContent:'space-between',marginBottom:8},
+  volLbl:        {color:C.text2,fontSize:13},
+  volPct:        {color:C.text1,fontSize:13,fontWeight:'700'},
+  volTrack:      {height:6,backgroundColor:C.bg3,borderRadius:3,overflow:'hidden',marginBottom:8},
+  volFill:       {height:6,borderRadius:3},
+  volSub:        {color:C.text3,fontSize:11},
+  saveBtn:       {backgroundColor:C.teal,borderRadius:16,padding:17,alignItems:'center',marginBottom:10},
+  savedBtn:      {backgroundColor:C.green},
+  saveBtnTxt:    {color:C.bg0,fontSize:17,fontWeight:'800'},
+  correctBtn:    {backgroundColor:C.bg2,borderRadius:16,padding:15,alignItems:'center',marginBottom:10,borderWidth:1,borderColor:C.border},
+  correctBtnTxt: {color:C.text1,fontSize:15,fontWeight:'600'},
+  retryBtn:      {alignItems:'center',padding:12},
+  retryBtnTxt:   {color:C.text2,fontSize:14},
+  scanWrap:      {position:'absolute',bottom:48,left:0,right:0,alignItems:'center'},
+  scanBtn:       {width:88,height:88,borderRadius:44,borderWidth:2,borderColor:C.teal,alignItems:'center',justifyContent:'center',backgroundColor:'rgba(0,229,204,0.08)'},
+  scanRing:      {width:72,height:72,borderRadius:36,backgroundColor:C.teal,alignItems:'center',justifyContent:'center'},
+  scanIcon:      {color:C.bg0,fontSize:28},
+  scanHint:      {color:C.text2,fontSize:13,marginTop:14},
+  modal:         {flex:1,backgroundColor:C.bg1,padding:24},
+  modalTitle:    {fontSize:22,fontWeight:'800',color:C.text1,marginBottom:6},
+  modalSub:      {fontSize:13,color:C.text2,marginBottom:20},
+  drinkOption:   {flexDirection:'row',alignItems:'center',backgroundColor:C.bg2,borderRadius:14,padding:14,marginBottom:8,borderWidth:1,borderColor:C.border,gap:12},
+  drinkOptEmoji: {fontSize:22},
+  drinkOptName:  {fontSize:15,fontWeight:'600',color:C.text1},
+  drinkOptCal:   {fontSize:12,color:C.text2,marginTop:2},
+  drinkOptCheck: {fontSize:18,fontWeight:'700'},
+  modalClose:    {backgroundColor:C.red+'20',borderRadius:14,padding:16,alignItems:'center',marginTop:16,borderWidth:1,borderColor:C.red+'40'},
+  modalCloseTxt: {color:C.red,fontSize:16,fontWeight:'700'},
 })
