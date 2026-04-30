@@ -29,7 +29,8 @@ export default function TodayScreen({ navigation }: any) {
   const calPct  = Math.min(stats.totalCalories / goals.dailyCalories, 1)
   const cafPct  = Math.min(stats.totalCaffeineMg / goals.dailyCaffeineMg, 1)
   const h       = new Date().getHours()
-  const greeting = h<12?'Good morning':'h<17?'Good afternoon':'Good evening'
+  const greeting = h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'
+
 
   return (
     <View style={s.root}>
