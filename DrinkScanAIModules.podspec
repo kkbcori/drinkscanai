@@ -7,7 +7,11 @@ Pod::Spec.new do |s|
   s.author       = "DrinkScanAI"
   s.platform     = :ios, "16.0"
   s.source       = { :path => "." }
-  s.source_files = "ios/DrinkScanAIModules/**/*.{m,mm,h}"
+  s.source_files  = "ios/DrinkScanAIModules/**/*.{m,mm,h}"
+  s.resources     = [
+    "ios/DrinkScanAI/ML/DrinkClassifier.mlpackage",
+    "ios/DrinkScanAI/ML/drink_classes.json"
+  ]
   s.frameworks   = "CoreML", "Vision", "AVFoundation", "UIKit"
   s.dependency   "React-Core"
 end
