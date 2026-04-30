@@ -1,186 +1,140 @@
-/**
- * DrinkClassifierModule.swift
- * DrinkScanAI
- *
- * On-device drink classification using Apple CoreML.
- * Uses iPhone's Neural Engine (ANE) — no network, no privacy risk.
- *
- * Pipeline:
- *   video frame path → UIImage → CVPixelBuffer → VNCoreMLRequest → top-N results
- *
- * Performance: ~8ms inference on iPhone 15 (Neural Engine)
- * Accuracy: ~65% pre-fine-tuning, ~88% after fine-tuning
- */
-
 import Foundation
 import CoreML
 import Vision
 import UIKit
-import React
+
+// Self-contained React Native module — no bridging header needed
+// Uses @objc and NSObject directly
 
 @objc(DrinkClassifierModule)
-class DrinkClassifierModule: NSObject, RCTBridgeModule {
+class DrinkClassifierModule: NSObject {
 
-  static func moduleName() -> String! { "DrinkClassifierModule" }
-  static func requiresMainQueueSetup() -> Bool { false }
-
-  // Lazy-load model once, reuse across scans
   private var vnModel: VNCoreMLModel?
   private var classNames: [String] = []
-  private var modelLoaded = false
+  private var isLoaded = false
+  private var loadError: String?
 
-  // ── Model Loading ─────────────────────────────────────────────────────────
+  @objc static func requiresMainQueueSetup() -> Bool { return false }
 
-  private func loadModelIfNeeded() throws {
-    guard !modelLoaded else { return }
+  // ── Load model ───────────────────────────────────────────────────────────
 
-    // Load DrinkClassifier.mlpackage from app bundle
-    guard let modelURL = Bundle.main.url(
-      forResource: "DrinkClassifier",
-      withExtension: "mlmodelc"  // Xcode compiles .mlpackage → .mlmodelc
-    ) ?? Bundle.main.url(
-      forResource: "DrinkClassifier",
-      withExtension: "mlpackage"
-    ) else {
-      throw NSError(
-        domain: "DrinkClassifier",
-        code: 404,
-        userInfo: [NSLocalizedDescriptionKey: "DrinkClassifier.mlpackage not found in bundle. Did you add it to Xcode?"]
-      )
+  private func loadModel() {
+    guard !isLoaded else { return }
+
+    // Try .mlmodelc first (compiled), then .mlpackage
+    let modelName = "DrinkClassifier"
+    guard let modelURL = Bundle.main.url(forResource: modelName, withExtension: "mlmodelc")
+                      ?? Bundle.main.url(forResource: modelName, withExtension: "mlpackage") else {
+      loadError = "Model file '\(modelName).mlmodelc' not found in bundle. Files in bundle: \(bundleMLFiles())"
+      NSLog("[DrinkClassifier] ERROR: %@", loadError!)
+      return
     }
 
-    // Configure for Neural Engine + GPU (fastest on iPhone)
-    let config = MLModelConfiguration()
-    config.computeUnits = .all
+    NSLog("[DrinkClassifier] Found model at: %@", modelURL.path)
 
-    let mlModel = try MLModel(contentsOf: modelURL, configuration: config)
-    vnModel = try VNCoreMLModel(for: mlModel)
+    do {
+      let config = MLModelConfiguration()
+      config.computeUnits = .all
+      let mlModel = try MLModel(contentsOf: modelURL, configuration: config)
+      vnModel = try VNCoreMLModel(for: mlModel)
 
-    // Load class names from metadata
-    if let classesJSON = mlModel.modelDescription.metadata[MLModelMetadataKey.description] as? String,
-       let data = classesJSON.data(using: .utf8),
-       let decoded = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
-      classNames = decoded.sorted { ($0["index"] as? Int ?? 0) < ($1["index"] as? Int ?? 0) }
-                          .compactMap { $0["name"] as? String }
-    }
-
-    // Fallback: load from drink_classes.json in bundle
-    if classNames.isEmpty, let jsonURL = Bundle.main.url(forResource: "drink_classes", withExtension: "json"),
-       let data = try? Data(contentsOf: jsonURL),
-       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-       let classes = json["classes"] as? [[String: Any]] {
-      classNames = classes.sorted { ($0["index"] as? Int ?? 0) < ($1["index"] as? Int ?? 0) }
-                          .compactMap { $0["name"] as? String }
-    }
-
-    modelLoaded = true
-    NSLog("[DrinkClassifier] Model loaded: %d classes", classNames.count)
-  }
-
-  // ── Main Classification Entry Point ──────────────────────────────────────
-
-  @objc func classifyImage(
-    _ imagePath: String,
-    topK: Int,
-    resolver resolve: @escaping RCTPromiseResolveBlock,
-    rejecter reject: @escaping RCTPromiseRejectBlock
-  ) {
-    DispatchQueue.global(qos: .userInitiated).async {
-      do {
-        try self.loadModelIfNeeded()
-
-        guard let image = UIImage(contentsOfFile: imagePath),
-              let cgImage = image.cgImage else {
-          reject("IMAGE_ERROR", "Cannot load image at path: \(imagePath)", nil)
-          return
-        }
-
-        guard let vnModel = self.vnModel else {
-          reject("MODEL_ERROR", "CoreML model not loaded", nil)
-          return
-        }
-
-        // Run Vision CoreML request
-        var results: [[String: Any]] = []
-        let semaphore = DispatchSemaphore(value: 0)
-
-        let request = VNCoreMLRequest(model: vnModel) { request, error in
-          defer { semaphore.signal() }
-
-          if let error = error {
-            NSLog("[DrinkClassifier] Inference error: %@", error.localizedDescription)
-            return
-          }
-
-          // Parse raw logits output
-          guard let observations = request.results as? [VNCoreMLFeatureValueObservation],
-                let logitsArray = observations.first?.featureValue.multiArrayValue else {
-            NSLog("[DrinkClassifier] No valid output from model")
-            return
-          }
-
-          // Convert logits to probabilities via softmax
-          let count = logitsArray.count
-          var logits = [Float](repeating: 0, count: count)
-          for i in 0..<count {
-            logits[i] = logitsArray[i].floatValue
-          }
-
-          let probs = self.softmax(logits)
-
-          // Get top-K results
-          let indexed = probs.enumerated().map { ($0.offset, $0.element) }
-          let topK_actual = min(topK, count)
-          let topResults = indexed.sorted { $0.1 > $1.1 }.prefix(topK_actual)
-
-          results = topResults.map { (index, prob) in
-            let name = index < self.classNames.count ? self.classNames[index] : "unknown_\(index)"
-            return [
-              "classIndex": index,
-              "className":  name,
-              "probability": Double(prob),
-            ]
-          }
-        }
-
-        // Preprocess: crop to square, scale to 224×224
-        request.imageCropAndScaleOption = .centerCrop
-
-        let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
-        try handler.perform([request])
-        semaphore.wait()
-
-        resolve(results)
-
-      } catch {
-        reject("CLASSIFIER_ERROR", error.localizedDescription, error)
+      // Load class names from metadata
+      if let classesJSON = mlModel.modelDescription.metadata[MLModelMetadataKey(rawValue: "classes")] as? String,
+         let data = classesJSON.data(using: .utf8),
+         let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
+        classNames = arr.sorted { ($0["index"] as? Int ?? 0) < ($1["index"] as? Int ?? 0) }
+                       .compactMap { $0["name"] as? String }
+        NSLog("[DrinkClassifier] Loaded %d class names from metadata", classNames.count)
       }
+
+      // Fallback: load from drink_classes.json
+      if classNames.isEmpty,
+         let jsonURL = Bundle.main.url(forResource: "drink_classes", withExtension: "json"),
+         let data = try? Data(contentsOf: jsonURL),
+         let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+         let classes = json["classes"] as? [[String: Any]] {
+        classNames = classes.sorted { ($0["index"] as? Int ?? 0) < ($1["index"] as? Int ?? 0) }
+                            .compactMap { $0["name"] as? String }
+        NSLog("[DrinkClassifier] Loaded %d class names from drink_classes.json", classNames.count)
+      }
+
+      isLoaded = true
+      NSLog("[DrinkClassifier] Model loaded successfully with %d classes", classNames.count)
+    } catch {
+      loadError = "Failed to load model: \(error.localizedDescription)"
+      NSLog("[DrinkClassifier] ERROR: %@", loadError!)
     }
   }
 
-  // ── Preload Model ─────────────────────────────────────────────────────────
+  private func bundleMLFiles() -> String {
+    let fm = FileManager.default
+    guard let resourcePath = Bundle.main.resourcePath else { return "no resourcePath" }
+    let files = (try? fm.contentsOfDirectory(atPath: resourcePath)) ?? []
+    return files.filter { $0.contains("ml") || $0.contains("ML") || $0.contains("Drink") }.joined(separator: ", ")
+  }
 
-  @objc func preloadModel(
-    _ resolve: @escaping RCTPromiseResolveBlock,
-    rejecter reject: @escaping RCTPromiseRejectBlock
-  ) {
+  // ── Preload ───────────────────────────────────────────────────────────────
+
+  @objc func preloadModel(_ resolve: @escaping RCTPromiseResolveBlock,
+                           rejecter reject: @escaping RCTPromiseRejectBlock) {
     DispatchQueue.global(qos: .background).async {
-      do {
-        try self.loadModelIfNeeded()
+      self.loadModel()
+      if self.isLoaded {
         resolve(["loaded": true, "classes": self.classNames.count])
-      } catch {
-        // Non-fatal — resolve with error info so JS can show fallback
-        resolve(["loaded": false, "error": error.localizedDescription])
+      } else {
+        resolve(["loaded": false, "error": self.loadError ?? "unknown"])
       }
     }
   }
 
-  // ── Softmax ───────────────────────────────────────────────────────────────
+  // ── Classify ──────────────────────────────────────────────────────────────
 
-  private func softmax(_ logits: [Float]) -> [Float] {
-    let maxLogit = logits.max() ?? 0
-    let exps = logits.map { exp($0 - maxLogit) }
-    let sum = exps.reduce(0, +)
-    return sum > 0 ? exps.map { $0 / sum } : exps
+  @objc func classifyImage(_ imagePath: String,
+                            topK: NSNumber,
+                            resolver resolve: @escaping RCTPromiseResolveBlock,
+                            rejecter reject: @escaping RCTPromiseRejectBlock) {
+    DispatchQueue.global(qos: .userInitiated).async {
+      self.loadModel()
+
+      guard self.isLoaded, let vnModel = self.vnModel else {
+        reject("MODEL_ERROR", self.loadError ?? "Model not loaded", nil)
+        return
+      }
+
+      guard let image = UIImage(contentsOfFile: imagePath),
+            let cgImage = image.cgImage else {
+        reject("IMAGE_ERROR", "Cannot load image: \(imagePath)", nil)
+        return
+      }
+
+      var output: [[String: Any]] = []
+      let semaphore = DispatchSemaphore(value: 0)
+
+      let request = VNCoreMLRequest(model: vnModel) { req, err in
+        defer { semaphore.signal() }
+        guard let obs = req.results as? [VNCoreMLFeatureValueObservation],
+              let arr = obs.first?.featureValue.multiArrayValue else { return }
+
+        var logits = [Float]()
+        for i in 0..<arr.count { logits.append(arr[i].floatValue) }
+
+        let maxL = logits.max() ?? 0
+        let exps = logits.map { exp($0 - maxL) }
+        let sum  = exps.reduce(0, +)
+        let probs = exps.map { $0 / sum }
+
+        let k = min(topK.intValue, probs.count)
+        let sorted = probs.enumerated().sorted { $0.element > $1.element }.prefix(k)
+        output = sorted.map { (idx, prob) in
+          let name = idx < self.classNames.count ? self.classNames[idx] : "unknown_\(idx)"
+          return ["classIndex": idx, "className": name, "probability": Double(prob)]
+        }
+      }
+
+      request.imageCropAndScaleOption = .centerCrop
+      try? VNImageRequestHandler(cgImage: cgImage, options: [:]).perform([request])
+      semaphore.wait()
+      resolve(output)
+    }
   }
 }
