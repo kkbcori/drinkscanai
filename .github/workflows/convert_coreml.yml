@@ -3,6 +3,9 @@ name: Convert to CoreML
 on:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   convert:
     runs-on: macos-26
