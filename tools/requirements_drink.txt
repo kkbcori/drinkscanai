@@ -1,0 +1,25 @@
+# DrinkScanAI training pipeline — Windows compatible
+# Python 3.12 required (FiftyOne doesn't support 3.13+)
+#
+# Install with:
+#   py -3.12 -m venv .venv
+#   .venv\Scripts\activate
+#   pip install -r requirements_drink.txt
+#
+# NOTE: coremltools is NOT listed here — it only works on macOS.
+# CoreML export runs automatically in GitHub Actions (macos-26 runner).
+
+# ── Dataset management (Open Images V7) ──────────────────────────────────
+fiftyone>=0.25.0,<2.0.0
+
+# ── Model training ────────────────────────────────────────────────────────
+torch>=2.0.0,<3.0.0
+torchvision>=0.15.0,<1.0.0
+
+# ── Image processing ──────────────────────────────────────────────────────
+Pillow>=10.0.0
+numpy>=1.24.0,<3.0.0
+
+# ── Config & CLI ──────────────────────────────────────────────────────────
+pyyaml>=6.0
+rich>=13.5.0

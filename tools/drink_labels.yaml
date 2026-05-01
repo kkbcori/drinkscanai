@@ -1,0 +1,254 @@
+# DrinkScanAI — drink label configuration
+# Adapted from StowBuddy pipeline (same format, same sources)
+#
+# Open Images V7 class browser:
+# https://storage.googleapis.com/openimages/v7/oidv7-class-descriptions.csv
+#
+# Key drink classes available in Open Images V7:
+#   Coffee cup, Beer, Wine glass, Juice, Cocktail, Soft drink,
+#   Milk, Tea, Coffee, Smoothie, Bottle, Mug, Beer glass
+
+version: 1
+format: stowbuddy-labels-v1
+
+labels:
+
+# ── COFFEE ────────────────────────────────────────────────────────────────
+  - id: espresso
+    display: Espresso
+    sources: [open_images_v7]
+    oi_classes: [Coffee cup, Espresso]
+    target_count: 300
+
+  - id: latte
+    display: Latte
+    sources: [open_images_v7]
+    oi_classes: [Coffee cup, Latte]
+    target_count: 300
+
+  - id: cappuccino
+    display: Cappuccino
+    sources: [open_images_v7]
+    oi_classes: [Coffee cup, Cappuccino]
+    target_count: 250
+
+  - id: coffee_black
+    display: Black Coffee
+    sources: [open_images_v7]
+    oi_classes: [Coffee, Coffee cup, Mug]
+    target_count: 400
+
+  - id: iced_coffee
+    display: Iced Coffee
+    sources: [open_images_v7]
+    oi_classes: [Coffee cup, Iced coffee]
+    target_count: 200
+
+  - id: cold_brew
+    display: Cold Brew Coffee
+    sources: [open_images_v7]
+    oi_classes: [Coffee cup, Iced coffee]
+    target_count: 150
+
+# ── TEA ───────────────────────────────────────────────────────────────────
+  - id: black_tea
+    display: Black Tea
+    sources: [open_images_v7]
+    oi_classes: [Tea, Teacup]
+    target_count: 300
+
+  - id: green_tea
+    display: Green Tea
+    sources: [open_images_v7]
+    oi_classes: [Tea, Teacup, Green tea]
+    target_count: 300
+
+  - id: matcha_latte
+    display: Matcha Latte
+    sources: [open_images_v7]
+    oi_classes: [Tea, Matcha]
+    target_count: 200
+
+  - id: chai_latte
+    display: Chai Latte
+    sources: [open_images_v7]
+    oi_classes: [Tea, Teacup]
+    target_count: 150
+
+  - id: herbal_tea
+    display: Herbal Tea
+    sources: [open_images_v7]
+    oi_classes: [Tea, Teacup, Herbal tea]
+    target_count: 200
+
+  - id: iced_tea
+    display: Iced Tea
+    sources: [open_images_v7]
+    oi_classes: [Tea, Iced tea]
+    target_count: 200
+
+  - id: bubble_tea
+    display: Bubble Tea
+    sources: [open_images_v7]
+    oi_classes: [Bubble tea, Boba]
+    target_count: 200
+
+# ── JUICE ─────────────────────────────────────────────────────────────────
+  - id: orange_juice
+    display: Orange Juice
+    sources: [open_images_v7]
+    oi_classes: [Juice, Orange juice]
+    target_count: 400
+
+  - id: apple_juice
+    display: Apple Juice
+    sources: [open_images_v7]
+    oi_classes: [Juice, Apple juice]
+    target_count: 200
+
+  - id: lemonade
+    display: Lemonade
+    sources: [open_images_v7]
+    oi_classes: [Lemon juice, Juice, Lemonade]
+    target_count: 200
+
+  - id: tomato_juice
+    display: Tomato Juice
+    sources: [open_images_v7]
+    oi_classes: [Tomato juice, Juice]
+    target_count: 150
+
+  - id: fruit_smoothie
+    display: Fruit Smoothie
+    sources: [open_images_v7]
+    oi_classes: [Smoothie, Juice]
+    target_count: 250
+
+  - id: green_smoothie
+    display: Green Smoothie
+    sources: [open_images_v7]
+    oi_classes: [Smoothie, Juice]
+    target_count: 150
+
+# ── MILK ──────────────────────────────────────────────────────────────────
+  - id: whole_milk
+    display: Whole Milk
+    sources: [open_images_v7]
+    oi_classes: [Milk, Dairy product]
+    target_count: 300
+
+  - id: chocolate_milk
+    display: Chocolate Milk
+    sources: [open_images_v7]
+    oi_classes: [Milk, Chocolate milk]
+    target_count: 200
+
+  - id: oat_milk
+    display: Oat Milk
+    sources: [open_images_v7]
+    oi_classes: [Milk, Plant milk]
+    target_count: 150
+
+  - id: protein_shake
+    display: Protein Shake
+    sources: [open_images_v7]
+    oi_classes: [Milkshake, Smoothie]
+    target_count: 150
+
+  - id: milkshake
+    display: Milkshake
+    sources: [open_images_v7]
+    oi_classes: [Milkshake]
+    target_count: 250
+
+# ── SODA ──────────────────────────────────────────────────────────────────
+  - id: cola
+    display: Cola
+    sources: [open_images_v7]
+    oi_classes: [Soft drink, Cola]
+    target_count: 400
+
+  - id: diet_cola
+    display: Diet Cola
+    sources: [open_images_v7]
+    oi_classes: [Soft drink, Cola]
+    target_count: 200
+
+  - id: lemon_lime_soda
+    display: Lemon-Lime Soda
+    sources: [open_images_v7]
+    oi_classes: [Soft drink, Carbonated water]
+    target_count: 200
+
+  - id: energy_drink
+    display: Energy Drink
+    sources: [open_images_v7]
+    oi_classes: [Energy drink, Soft drink]
+    target_count: 300
+
+  - id: sports_drink
+    display: Sports Drink
+    sources: [open_images_v7]
+    oi_classes: [Sports drink, Soft drink]
+    target_count: 200
+
+# ── WATER ─────────────────────────────────────────────────────────────────
+  - id: water
+    display: Still Water
+    sources: [open_images_v7]
+    oi_classes: [Drinking water, Water, Mineral water, Bottle]
+    target_count: 500
+
+  - id: sparkling_water
+    display: Sparkling Water
+    sources: [open_images_v7]
+    oi_classes: [Mineral water, Carbonated water, Water]
+    target_count: 250
+
+  - id: coconut_water
+    display: Coconut Water
+    sources: [open_images_v7]
+    oi_classes: [Coconut, Juice]
+    target_count: 150
+
+# ── ALCOHOL ───────────────────────────────────────────────────────────────
+  - id: beer
+    display: Beer
+    sources: [open_images_v7]
+    oi_classes: [Beer, Beer glass, Stout]
+    target_count: 500
+
+  - id: wine_red
+    display: Red Wine
+    sources: [open_images_v7]
+    oi_classes: [Wine, Red wine, Wine glass]
+    target_count: 400
+
+  - id: wine_white
+    display: White Wine
+    sources: [open_images_v7]
+    oi_classes: [Wine, White wine, Wine glass]
+    target_count: 300
+
+  - id: cocktail
+    display: Cocktail
+    sources: [open_images_v7]
+    oi_classes: [Cocktail, Drink, Alcoholic beverage]
+    target_count: 400
+
+# ── HOT DRINKS ────────────────────────────────────────────────────────────
+  - id: hot_chocolate
+    display: Hot Chocolate
+    sources: [open_images_v7]
+    oi_classes: [Hot chocolate, Cocoa, Mug]
+    target_count: 250
+
+# ── FERMENTED ─────────────────────────────────────────────────────────────
+  - id: kombucha
+    display: Kombucha
+    sources: [open_images_v7]
+    oi_classes: [Kombucha, Drink]
+    target_count: 150
+
+# Total: ~42 drink categories, ~10,000 target images
+# Runtime: ~2 hours on CPU, ~30 min on GPU
