@@ -23,10 +23,11 @@ jobs:
       - name: Install dependencies
         run: |
           pip install "torch==2.4.0" "torchvision==0.19.0" --index-url https://download.pytorch.org/whl/cpu
-          pip install "coremltools==8.1" "timm==0.9.16" "numpy<2" "Pillow"
+          pip install "coremltools==8.1" "numpy<2" "Pillow"
 
-      - name: Build and convert model
-        run: python3 scripts/build_coreml.py
+      - name: Export CoreML from trained weights
+        run: |
+          python3 tools/export_coreml.py
 
       - name: Commit model to repo
         run: |
@@ -36,6 +37,6 @@ jobs:
           if git diff --staged --quiet; then
             echo "No changes to commit"
           else
-            git commit -m "feat: add CoreML drink classifier (auto-generated)"
+            git commit -m "feat: CoreML drink classifier v3 (fine-tuned on Open Images)"
             git push
           fi
