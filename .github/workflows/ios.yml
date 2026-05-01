@@ -43,7 +43,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ios/Pods
-          key: pods-localpod-${{ hashFiles('ios/Podfile') }}
+          key: pods-newmodel-${{ hashFiles('ios/Podfile') }}
 
       - name: Install CocoaPods
         run: cd ios && bundle exec pod install && cd ..
