@@ -3,45 +3,32 @@ import {
   View, Text, ScrollView, StyleSheet,
   TouchableOpacity, NativeModules,
 } from 'react-native'
+import { preloadModel, getLastError, isUsingRealML } from '../ml/drinkClassifier'
 
 export default function DiagnosticScreen() {
   const [results, setResults] = useState<string[]>([])
 
-  const addLine = (line: string) => {
-    setResults(prev => [...prev, line])
-    console.log('[DIAG]', line)
-  }
+  const addLine = (line: string) => setResults(prev => [...prev, line])
 
   const runDiagnostics = async () => {
     setResults([])
 
-    // 1. Check NativeModules
     addLine('=== NativeModules ===')
     const allModules = Object.keys(NativeModules)
     addLine(`Total modules: ${allModules.length}`)
-
-    const drinkModules = allModules.filter(m =>
-      m.toLowerCase().includes('drink') ||
-      m.toLowerCase().includes('classifier') ||
-      m.toLowerCase().includes('frame') ||
-      m.toLowerCase().includes('volume') ||
-      m.toLowerCase().includes('arkit')
+    const custom = allModules.filter(m =>
+      ['DrinkClassifier','FrameExtractor','VolumeEstimator'].some(k => m.includes(k))
     )
-    addLine(`Custom modules: ${drinkModules.join(', ') || 'NONE FOUND'}`)
+    addLine(`Custom modules: ${custom.join(', ') || 'NONE FOUND'}`)
 
-    // 2. Check DrinkClassifierModule specifically
     addLine('\n=== DrinkClassifierModule ===')
     const { DrinkClassifierModule } = NativeModules
     if (!DrinkClassifierModule) {
       addLine('❌ NOT FOUND in NativeModules')
-      addLine('This means the Swift module is not registered')
-      addLine('Bridging header may be missing or wrong')
     } else {
       addLine('✅ Found in NativeModules')
-      const methods = Object.keys(DrinkClassifierModule)
-      addLine(`Methods: ${methods.join(', ')}`)
+      addLine(`Methods: ${Object.keys(DrinkClassifierModule).join(', ')}`)
 
-      // 3. Try preloadModel
       addLine('\n=== Preload Model ===')
       try {
         const result = await DrinkClassifierModule.preloadModel()
@@ -54,17 +41,26 @@ export default function DiagnosticScreen() {
       } catch (e: any) {
         addLine(`❌ Exception: ${e?.message ?? String(e)}`)
       }
+
+      addLine('\n=== Test Inference (dummy path) ===')
+      try {
+        const r = await DrinkClassifierModule.classifyImage('/tmp/test.jpg', 3)
+        addLine(`Result: ${JSON.stringify(r?.slice(0,2))}`)
+      } catch (e: any) {
+        addLine(`Error (expected for dummy path): ${e?.message ?? String(e)}`)
+      }
     }
 
-    // 4. Check FrameExtractorModule
     addLine('\n=== FrameExtractorModule ===')
-    const { FrameExtractorModule } = NativeModules
-    addLine(FrameExtractorModule ? '✅ Found' : '❌ NOT FOUND')
+    addLine(NativeModules.FrameExtractorModule ? '✅ Found' : '❌ NOT FOUND')
 
-    // 5. Check VolumeEstimatorModule
     addLine('\n=== VolumeEstimatorModule ===')
-    const { VolumeEstimatorModule } = NativeModules
-    addLine(VolumeEstimatorModule ? '✅ Found' : '❌ NOT FOUND')
+    addLine(NativeModules.VolumeEstimatorModule ? '✅ Found' : '❌ NOT FOUND')
+
+    addLine('\n=== ML Status ===')
+    addLine(`Using real ML: ${isUsingRealML() ? '✅ Yes (CoreML)' : '❌ No (Heuristic)'}`)
+    const err = getLastError()
+    if (err) addLine(`Last error: ${err}`)
 
     addLine('\n=== Done ===')
   }
@@ -85,7 +81,7 @@ export default function DiagnosticScreen() {
             s.line,
             line.includes('✅') && s.good,
             line.includes('❌') && s.bad,
-            line.includes('===') && s.header2,
+            line.includes('===') && s.head,
           ]}>
             {line}
           </Text>
@@ -96,14 +92,14 @@ export default function DiagnosticScreen() {
 }
 
 const s = StyleSheet.create({
-  screen:  { flex: 1, backgroundColor: '#0A1628' },
-  header:  { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, paddingTop: 60, borderBottomWidth: 1, borderBottomColor: '#1E3050' },
-  title:   { color: '#fff', fontSize: 20, fontWeight: '700' },
-  btn:     { backgroundColor: '#005F99', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8 },
-  btnTxt:  { color: '#fff', fontWeight: '600' },
-  scroll:  { flex: 1, padding: 16 },
-  line:    { color: '#A8B4C8', fontSize: 13, fontFamily: 'Courier', marginBottom: 4 },
-  good:    { color: '#00C896' },
-  bad:     { color: '#FF453A' },
-  header2: { color: '#00C2FF', fontWeight: '700', marginTop: 8 },
+  screen:  { flex:1, backgroundColor:'#0A1628' },
+  header:  { flexDirection:'row', justifyContent:'space-between', alignItems:'center', padding:16, paddingTop:60, borderBottomWidth:1, borderBottomColor:'#1E3050' },
+  title:   { color:'#fff', fontSize:20, fontWeight:'700' },
+  btn:     { backgroundColor:'#005F99', paddingHorizontal:16, paddingVertical:8, borderRadius:8 },
+  btnTxt:  { color:'#fff', fontWeight:'600' },
+  scroll:  { flex:1, padding:16 },
+  line:    { color:'#A8B4C8', fontSize:12, fontFamily:'Courier', marginBottom:3 },
+  good:    { color:'#00C896' },
+  bad:     { color:'#FF453A' },
+  head:    { color:'#00C2FF', fontWeight:'700', marginTop:8 },
 })

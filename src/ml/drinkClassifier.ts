@@ -1,39 +1,37 @@
-/**
- * drinkClassifier.ts — with detailed diagnostics
- */
-
 import { NativeModules } from 'react-native'
 import type { DrinkIdentification } from '../types'
 import { getDrinkInfo, getAllDrinkIds } from '../db/nutritionDB'
 
 const { DrinkClassifierModule } = NativeModules
-const MODEL_VERSION_COREML    = 'coreml_v1'
+const MODEL_VERSION_COREML    = 'coreml_v3_finetuned'
 const MODEL_VERSION_HEURISTIC = 'heuristic_v1'
 
 let coremlAvailable: boolean | null = null
-
-// ── CoreML inference ──────────────────────────────────────────────────────
+let lastError: string = ''
 
 async function runCoreMLInference(
   framePath: string
 ): Promise<Array<{ classId: string; probability: number }> | null> {
   if (!DrinkClassifierModule?.classifyImage) {
-    console.warn('[DrinkClassifier] DrinkClassifierModule.classifyImage not found in NativeModules')
-    console.warn('[DrinkClassifier] Available modules:', Object.keys(NativeModules).join(', '))
+    lastError = 'DrinkClassifierModule.classifyImage not found'
+    console.warn('[DrinkClassifier]', lastError)
     return null
   }
 
   try {
+    console.log('[DrinkClassifier] Running inference on:', framePath)
     const results: Array<{ classIndex: number; className: string; probability: number }>
       = await DrinkClassifierModule.classifyImage(framePath, 10)
 
     if (!results || results.length === 0) {
-      console.warn('[DrinkClassifier] CoreML returned empty results')
+      lastError = 'CoreML returned empty results'
+      console.warn('[DrinkClassifier]', lastError)
       return null
     }
 
     coremlAvailable = true
-    console.log('[DrinkClassifier] CoreML inference succeeded, top:', results[0]?.className)
+    lastError = ''
+    console.log('[DrinkClassifier] Top result:', results[0]?.className, results[0]?.probability)
 
     const allIds = getAllDrinkIds()
     return results.map(r => {
@@ -45,13 +43,12 @@ async function runCoreMLInference(
       return { classId, probability: r.probability }
     })
   } catch (e: any) {
-    console.error('[DrinkClassifier] CoreML inference error:', e?.message ?? e)
+    lastError = e?.message ?? String(e)
+    console.error('[DrinkClassifier] CoreML error:', lastError)
     coremlAvailable = false
     return null
   }
 }
-
-// ── Heuristic fallback ────────────────────────────────────────────────────
 
 const WEIGHTED_DRINKS = [
   { id: 'coffee_black',    weight: 12 },
@@ -63,26 +60,19 @@ const WEIGHTED_DRINKS = [
   { id: 'green_tea',       weight: 5  },
   { id: 'black_tea',       weight: 5  },
   { id: 'whole_milk',      weight: 4  },
-  { id: 'oat_milk',        weight: 4  },
   { id: 'energy_drink',    weight: 4  },
   { id: 'sparkling_water', weight: 4  },
-  { id: 'americano',       weight: 5  },
-  { id: 'matcha_latte',    weight: 3  },
-  { id: 'cold_brew',       weight: 3  },
+  { id: 'beer',            weight: 4  },
   { id: 'lemonade',        weight: 3  },
-  { id: 'fruit_smoothie',  weight: 2  },
-  { id: 'hot_chocolate',   weight: 2  },
-  { id: 'beer',            weight: 2  },
+  { id: 'hot_chocolate',   weight: 3  },
+  { id: 'cold_brew',       weight: 3  },
 ]
 
 function heuristicInference(): Array<{ classId: string; probability: number }> {
   const total = WEIGHTED_DRINKS.reduce((s, d) => s + d.weight, 0)
   let r = Math.random() * total
   let topId = WEIGHTED_DRINKS[0].id
-  for (const d of WEIGHTED_DRINKS) {
-    r -= d.weight
-    if (r <= 0) { topId = d.id; break }
-  }
+  for (const d of WEIGHTED_DRINKS) { r -= d.weight; if (r <= 0) { topId = d.id; break } }
   const topProb = 0.55 + Math.random() * 0.30
   const allIds  = getAllDrinkIds()
   return allIds.map(id => ({
@@ -91,19 +81,23 @@ function heuristicInference(): Array<{ classId: string; probability: number }> {
   })).sort((a, b) => b.probability - a.probability)
 }
 
-// ── Main inference ────────────────────────────────────────────────────────
-
 async function runInference(
   framePath: string | null
 ): Promise<Array<{ classId: string; probability: number }>> {
-  if (framePath && coremlAvailable !== false) {
-    const coremlResults = await runCoreMLInference(framePath)
-    if (coremlResults && coremlResults.length > 0) return coremlResults
+  if (!framePath) {
+    lastError = 'No frame path — video recording may have failed'
+    console.warn('[DrinkClassifier]', lastError)
+    return heuristicInference()
   }
+
+  if (coremlAvailable !== false) {
+    const results = await runCoreMLInference(framePath)
+    if (results && results.length > 0) return results
+  }
+
+  console.warn('[DrinkClassifier] Falling back to heuristic. Reason:', lastError)
   return heuristicInference()
 }
-
-// ── Public API ────────────────────────────────────────────────────────────
 
 export async function classifyDrink(framePath: string | null): Promise<DrinkIdentification> {
   const results  = await runInference(framePath)
@@ -137,28 +131,30 @@ export async function getTopCandidates(
 
 export async function preloadModel(): Promise<void> {
   if (!DrinkClassifierModule?.preloadModel) {
-    console.warn('[DrinkClassifier] DrinkClassifierModule not in NativeModules')
-    console.warn('[DrinkClassifier] Available:', Object.keys(NativeModules).join(', '))
+    console.warn('[DrinkClassifier] Module not found in NativeModules')
     coremlAvailable = false
     return
   }
-
   try {
-    console.log('[DrinkClassifier] Preloading CoreML model...')
     const result = await DrinkClassifierModule.preloadModel()
-    console.log('[DrinkClassifier] Preload result:', JSON.stringify(result))
     coremlAvailable = result?.loaded === true
     if (coremlAvailable) {
-      console.log(`[DrinkClassifier] CoreML ready — ${result.classes} classes`)
+      console.log(`[DrinkClassifier] ✅ CoreML ready — ${result.classes} classes`)
     } else {
-      console.warn('[DrinkClassifier] CoreML failed to load:', result?.error)
+      lastError = result?.error ?? 'unknown'
+      console.warn('[DrinkClassifier] ❌ CoreML failed:', lastError)
     }
   } catch (e: any) {
-    console.error('[DrinkClassifier] Preload exception:', e?.message ?? e)
+    lastError = e?.message ?? String(e)
+    console.error('[DrinkClassifier] Preload exception:', lastError)
     coremlAvailable = false
   }
 }
 
 export function isUsingRealML(): boolean {
   return coremlAvailable === true
+}
+
+export function getLastError(): string {
+  return lastError
 }
